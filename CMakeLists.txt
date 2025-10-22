@@ -1,6 +1,5 @@
-cmake_minimum_required(VERSION 4.1.2)
+cmake_minimum_required(VERSION 3.28.3)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 project(Capybara LANGUAGES CXX)
 set(SRCS
     "include/Capybara/Capybara.cpp"
@@ -23,6 +22,7 @@ set(SRCS
 )
 add_executable(test-linux-exe ${SRCS})
 set_property(TARGET test-linux-exe PROPERTY CXX_STANDARD 20)
+
 target_include_directories(test-linux-exe PRIVATE
     "test/linux"
     "include/Capybara"

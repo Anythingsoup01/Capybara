@@ -1,4 +1,5 @@
 #include "Capybara.h"
+#include "Runtime.hpp"
 #include <dlfcn.h>
 #include <link.h>
 #include <iostream>
@@ -9,10 +10,32 @@
 #include <cxxabi.h>
 #include <signal.h>
 
+#include <Runtime.hpp>
+
 #define CPY_API_ASSERT(x, ...) if (!(x)) { printf("ERROR: %s", __VA_ARGS__); raise(SIGTRAP); }
 
 namespace Capybara
 {
+
+    namespace Utils {
+
+
+
+        void PrintTypeInfo(CapyType* t)
+        {
+            std::cout << "Type: " << t->Name << "\n";
+            if (t->Parent)
+                std::cout << "  Inherits: " << t->Parent->Name << "\n";
+
+            if (!t->vtable.empty()) {
+                std::cout << "  Methods:\n";
+                for (auto& m : t->vtable)
+                    std::cout << "    - " << m.Name << "()\n";
+            }
+            std::cout << std::endl;
+        }
+    }
+
     std::string demangle(const char* name)
     {
         int status = 0;
@@ -29,7 +52,7 @@ namespace Capybara
 
     Capybara::Capybara(const std::filesystem::path& filePath) // TODO: We should take a second argument for flags
     {
-        m_Instance = dlopen(filePath.c_str(), RTLD_NOW);
+        m_Instance = dlmopen(LM_ID_NEWLM, filePath.c_str(), RTLD_NOW | RTLD_LOCAL);
         CPY_API_ASSERT(m_Instance, dlerror());
 
         std::unordered_map<std::string, std::string> symbols = ProcessLibrary(filePath);
@@ -53,6 +76,26 @@ namespace Capybara
 
             m_Functions[tmp] = func;
         }
+
+        CapyType Type_Object("Object", nullptr, sizeof(CapyObject));
+        CapyType Type_String("String", &Type_Object, sizeof(CapyObject));
+        CapyType Type_Int32("Int32", &Type_Object, sizeof(int32_t));
+
+        Type_Object.vtable.push_back({"ToString", ObjectToString });
+
+        CoreTypeRegistry coreAssembly; // This needs to be a member variable!
+
+        coreAssembly.Object = &Type_Object;
+        coreAssembly.String = &Type_String;
+        coreAssembly.Int32 = &Type_Int32;
+
+        Utils::PrintTypeInfo(&Type_Object);
+        Utils::PrintTypeInfo(&Type_String);
+        Utils::PrintTypeInfo(&Type_Int32);
+
+        auto obj = CreateObject(coreAssembly.Object);
+        CallMethod(obj.get(), "ToString");
+
     }
 
     Capybara::~Capybara()
@@ -69,7 +112,7 @@ namespace Capybara
         return false;
     }
 
-    CapybaraFunction Capybara::RetrieveFunction(const char* nameSoace, const char* className, const char* functionName)
+    CapybaraFunction Capybara::RetrieveFunction(const char* nameSpace, const char* className, const char* functionName)
     {
         if (!functionName)
         {
@@ -78,8 +121,8 @@ namespace Capybara
         }
         std::string functionCall;
 
-        if (nameSoace)
-            functionCall.append(nameSoace).append("::");
+        if (nameSpace)
+            functionCall.append(nameSpace).append("::");
         if (className)
             functionCall.append(className).append("::");
 
@@ -147,5 +190,26 @@ namespace Capybara
         return out;
     }
 
+    std::unique_ptr<CapyObject> Capybara::CreateObject(CapyType* type)
+    {
+        std::unique_ptr<CapyObject> obj = std::make_unique<CapyObject>();
+        obj->Type = type;
+        return obj;
+    }
+
+    void Capybara::ObjectToString(CapyObject* obj)
+    {
+        std::cout << "Object of type " << obj->Type->Name << std::endl;
+    }
+    
+    void Capybara::CallMethod(CapyObject* obj, const std::string& methodName) {
+        for (auto& m : obj->Type->vtable) {
+        if (m.Name == methodName && m.fn) {
+            m.fn(obj);
+            return;
+        }
+    }
+    std::cerr << "Method not found: " << methodName << std::endl;
+}
 }
 

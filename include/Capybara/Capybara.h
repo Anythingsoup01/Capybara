@@ -7,6 +7,8 @@ typedef void* CapybaraObject;
 typedef CapybaraObject (*CapybaraFunction)(...);
 typedef void CapybaraVariable;
 
+#include "Runtime.hpp"
+
 namespace Capybara
 {
     class Capybara
@@ -20,6 +22,9 @@ namespace Capybara
 
     private:
         std::unordered_map<std::string, std::string> ProcessLibrary(const std::filesystem::path& filePath);
+        std::unique_ptr<CapyObject> CreateObject(CapyType* type);
+        static void ObjectToString(CapyObject* obj);
+        void CallMethod(CapyObject* obj, const std::string& methodName);
     private:
         CapybaraObject m_Instance = nullptr;
         std::unordered_map<std::string, CapybaraFunction> m_Functions;
