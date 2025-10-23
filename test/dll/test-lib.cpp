@@ -6,7 +6,6 @@ namespace DLL
     void Test::Print(const char* msg)
     {
         printf( "Got :%s\n", msg);
-        m_PreviousMessage = msg;
     }
 
     void Test::PrintAgain()

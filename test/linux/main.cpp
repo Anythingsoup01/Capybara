@@ -3,17 +3,26 @@
 
 int main(int argc, char** argv) 
 {
-    Capybara::Capybara instance = Capybara::Capybara("test/dll/test-lib.so");
+    Capybara::InitCapy();
 
-    const CapybaraFunction& printFunc = instance.RetrieveFunction("DLL", "Test", "Print");
-    const CapybaraFunction& printAgainFunc = instance.RetrieveFunction("DLL", "Test", "PrintAgain");
-    
-    CapybaraObject obj = instance.RetrieveFunction("DLL", "Test", "Create")();
+    auto obj = Capybara::CreateObject();
+    Capybara::CallMethod(obj.get(), "ToString");
 
-    if (obj)
+
+    auto s = Capybara::CreateManagedString("Hello from Managed String!");
+    Capybara::CallMethod(s.get(), "ToString");
+
+
+    void* valPtr = Capybara::CallMethod(static_cast<CapyObject*>(s.get()), "GetValue");
+    if (valPtr)
     {
-        instance.RetrieveFunction("DLL", "Test", "Print")(obj, "This is a test!");
-        instance.RetrieveFunction("DLL", "Test", "PrintAgain")(obj);
+        auto strPtr = reinterpret_cast<std::string*>(valPtr);
+        std::cout << "From the GetValue(): " << *strPtr << std::endl;
     }
+
+    Capybara::AddLibrary("test/dll/test-lib.so");
+
+    auto testLib = Capybara::GetObject("test-lib.so");
+
 
 }

@@ -14,202 +14,261 @@
 
 #define CPY_API_ASSERT(x, ...) if (!(x)) { printf("ERROR: %s", __VA_ARGS__); raise(SIGTRAP); }
 
-namespace Capybara
-{
+#define CPY_REINTERPRET_DECL(x) reinterpret_cast<void (*)(CapyObject*)>(x)
+#define CPY_REINTERPRET_VTAB(x) reinterpret_cast<void*(*)(CapyObject*, ...)>(x)
+#define CPY_REINTERPRET_RAW(x) reinterpret_cast<void*(*)(...)>(x)
 
-    namespace Utils {
-
-
-
-        void PrintTypeInfo(CapyType* t)
-        {
-            std::cout << "Type: " << t->Name << "\n";
-            if (t->Parent)
+namespace Utils {
+    void PrintTypeInfo(CapyType* t)
+    {
+        std::cout << "Type: " << t->Name << "\n";
+        if (t->Parent)
                 std::cout << "  Inherits: " << t->Parent->Name << "\n";
 
-            if (!t->vtable.empty()) {
-                std::cout << "  Methods:\n";
-                for (auto& m : t->vtable)
-                    std::cout << "    - " << m.Name << "()\n";
-            }
-            std::cout << std::endl;
+        if (!t->VTable.empty()) {
+            std::cout << "  Methods:\n";
+            for (auto& m : t->VTable)
+                std::cout << "    - " << m.Name << "()\n";
         }
+        std::cout << std::endl;
     }
+}
 
-    std::string demangle(const char* name)
-    {
-        int status = 0;
-        // Call the ABI demangling function
-        char* demangled = abi::__cxa_demangle(name, nullptr, nullptr, &status);
-        if (status == 0) {
-            std::string result(demangled);
-            free(demangled);
-            return result;
-        }
-        // If demangling fails, return the original name
-        return name;
+std::string demangle(const char* name)
+{
+    int status = 0;
+    // Call the ABI demangling function
+    char* demangled = abi::__cxa_demangle(name, nullptr, nullptr, &status);
+    if (status == 0) {
+        std::string result(demangled);
+        free(demangled);
+        return result;
     }
+    return name;
+}
 
-    Capybara::Capybara(const std::filesystem::path& filePath) // TODO: We should take a second argument for flags
+static void* ObjectToString(CapyObject* obj)
+{
+    std::cout << "[Object of type " << (obj->Type ? obj->Type->Name : "<null>") << "]\n";
+    return nullptr;
+}
+
+static void* StringToString(CapyObject* obj)
+{
+    ManagedString* s = static_cast<ManagedString*>(obj);
+    std::cout << "[Object of type " << s->Type->Name << "]\n";
+    return nullptr;
+}
+
+static void* StringGetValue(CapyObject* obj)
+{
+    ManagedString* s = static_cast<ManagedString*>(obj);
+    return reinterpret_cast<void*>(&s->Value);
+}
+
+
+void Capybara::InitCapy()
+{
+    s_CoreRegistry = CoreTypeRegistry();
+    CapyType* Type_Object = new CapyType("Object", nullptr, sizeof(CapyObject));
+    CapyType* Type_String = new CapyType("String", Type_Object, sizeof(ManagedString));
+    CapyType* Type_Int32 = new CapyType("Int32", Type_Object, sizeof(int32_t));
+
+    RegisterMethod(Type_Object, "ToString", CPY_REINTERPRET_DECL(ObjectToString));
+    RegisterMethod(Type_String, "ToString", CPY_REINTERPRET_DECL(StringToString));
+    RegisterMethod(Type_String, "GetValue", CPY_REINTERPRET_DECL(StringGetValue));
+
+    BuildVTable(Type_Object);
+    BuildVTable(Type_String);
+    BuildVTable(Type_Int32);
+
+    s_CoreRegistry.Object = Type_Object;
+    s_CoreRegistry.String = Type_String;
+    s_CoreRegistry.Int32 = Type_Int32;
+
+}
+
+void Capybara::AddLibrary(const std::filesystem::path& filePath) // TODO: We should take a second argument for flags
+{
+    void* instance = dlmopen(LM_ID_NEWLM, filePath.c_str(), RTLD_NOW | RTLD_LOCAL);
+    CPY_API_ASSERT(instance, dlerror());
+
+
+    auto newObj = CreateObject();
+    newObj->LibraryName = filePath.filename().string();
+
+    std::unordered_map<std::string, std::string> symbols = ProcessLibrary(filePath);
+    for (const auto& [demangledName, mangledName] : symbols)
     {
-        m_Instance = dlmopen(LM_ID_NEWLM, filePath.c_str(), RTLD_NOW | RTLD_LOCAL);
-        CPY_API_ASSERT(m_Instance, dlerror());
-
-        std::unordered_map<std::string, std::string> symbols = ProcessLibrary(filePath);
-        for (const auto& [demangledName, mangledName] : symbols)
+        
+        auto newFunction = CPY_REINTERPRET_RAW(dlsym(instance, mangledName.c_str()));
+        const char* err = dlerror();
+        if (err)
         {
-            CapybaraFunction func = (CapybaraFunction)dlsym(m_Instance, mangledName.c_str());
-            const char* err = dlerror();
-            if (err)
-            {
-                std::cout << "ERROR: " << err << std::endl;
-                continue;
-            }
-            if (!func)
-            {
-                continue;
-            }
-
-            std::string tmp = demangledName;
-            size_t firstParenthesi = tmp.find_first_of('(');
-            tmp.erase(firstParenthesi);
-
-            m_Functions[tmp] = func;
+            std::cout << "ERROR: " << err << std::endl;
+            continue;
         }
-
-        CapyType Type_Object("Object", nullptr, sizeof(CapyObject));
-        CapyType Type_String("String", &Type_Object, sizeof(CapyObject));
-        CapyType Type_Int32("Int32", &Type_Object, sizeof(int32_t));
-
-        Type_Object.vtable.push_back({"ToString", ObjectToString });
-
-        CoreTypeRegistry coreAssembly; // This needs to be a member variable!
-
-        coreAssembly.Object = &Type_Object;
-        coreAssembly.String = &Type_String;
-        coreAssembly.Int32 = &Type_Int32;
-
-        Utils::PrintTypeInfo(&Type_Object);
-        Utils::PrintTypeInfo(&Type_String);
-        Utils::PrintTypeInfo(&Type_Int32);
-
-        auto obj = CreateObject(coreAssembly.Object);
-        CallMethod(obj.get(), "ToString");
-
-    }
-
-    Capybara::~Capybara()
-    {
-        dlclose(m_Instance);
-        m_Instance = nullptr;
-    }
-
-    bool Capybara::FunctionExists(const std::string& functionName)
-    {
-        if (m_Functions.contains(functionName))
-            return true;
-
-        return false;
-    }
-
-    CapybaraFunction Capybara::RetrieveFunction(const char* nameSpace, const char* className, const char* functionName)
-    {
-        if (!functionName)
+        if (!newFunction)
         {
-            CPY_API_ASSERT(false, "Function Name not declared!");
-            return nullptr;
+            continue;
         }
-        std::string functionCall;
 
-        if (nameSpace)
-            functionCall.append(nameSpace).append("::");
-        if (className)
-            functionCall.append(className).append("::");
+        std::string tmp = demangledName;
+        size_t firstParenthesi = tmp.find_first_of('(');
+        tmp.erase(firstParenthesi);
 
-        functionCall.append(functionName);
+        std::cout << tmp << std::endl;
 
-        if (!FunctionExists(functionCall))
-            return nullptr;
-
-        return m_Functions[functionCall];
-
+        newObj->Type->VTable.push_back({tmp, nullptr, newFunction});
     }
 
-    std::unordered_map<std::string, std::string> Capybara::ProcessLibrary(const std::filesystem::path& filePath)
-    {
-        if (elf_version(EV_CURRENT) == EV_NONE) {
-            std::cerr << "ELF library initialization failed." << std::endl;
-            return {};
-        }
 
-        int fd = open(filePath.c_str(), O_RDONLY);
-        if (fd < 0) {
-            perror("open");
-            return {};
-        }
+    s_LoadedLibraries.push_back({*newObj});
 
-        Elf* elf = elf_begin(fd, ELF_C_READ, nullptr);
-        if (!elf) {
-            std::cerr << "elf_begin() failed: " << elf_errmsg(-1) << std::endl;
-            close(fd);
-            return {};
-        }
+    dlclose(instance);
+    instance = nullptr;
+}
 
-        std::unordered_map<std::string, std::string> out;
-
-        Elf_Scn* scn = nullptr;
-        while ((scn = elf_nextscn(elf, scn)) != nullptr)
+void* Capybara::CallMethod(CapyObject* obj, const std::string& methodName, const std::vector<RuntimeValue>& values)
+{
+    CapyType* t = obj->Type;
+    for (auto& m : t->VTable) {
+        if (m.Name == methodName && (m.fn || m.Target.fn))
         {
-            GElf_Shdr shdr;
-            if (gelf_getshdr(scn, &shdr) != &shdr) continue;
-
-            if (shdr.sh_type == SHT_DYNSYM)
+            if (m.fn && !m.Target.fn)
             {
-                Elf_Data* data = elf_getdata(scn, nullptr);
-                int symbol_count = shdr.sh_size / shdr.sh_entsize;
+                return m.fn(obj);
+            }
+            else if (!m.fn && m.Target.fn)
+            {
+                return CallExternalMethod(obj, methodName, values);
+            }
+            else
+            {
+                std::cerr << "ERROR: This is some bullshit!\n";
+            }
+        }
+    }
+    return nullptr;
+}
 
-                std::cout << "Dynamic symbols for " << filePath << ":" << std::endl;
-                for (int i = 0; i < symbol_count; ++i)
-                {
-                    GElf_Sym sym;
-                    if (gelf_getsym(data, i, &sym) != &sym) continue;
+void* Capybara::CallExternalMethod(CapyObject* obj, const std::string& name, const std::vector<RuntimeValue>& values)
+{
+    
+}
 
-                    if (sym.st_shndx == SHN_UNDEF)
-                        continue;
+CapyObject* Capybara::GetObject(const std::string &libName)
+{
+    for (auto& lib : s_LoadedLibraries)
+    {
+        if (lib.LibraryName == libName)
+            return &lib;
+    }
+    return nullptr;
+}
 
-                    const char* name = elf_strptr(elf, shdr.sh_link, sym.st_name);
-                    if (name && *name) {
-                        out[demangle(name)] = name;
-                    }
+std::unique_ptr<CapyObject> Capybara::CreateObject()
+{
+    return std::make_unique<CapyObject>(CapyObject{ "Object", s_CoreRegistry.Object });
+}
+
+std::unique_ptr<ManagedString> Capybara::CreateManagedString(const std::string& data)
+{
+    return std::make_unique<ManagedString>(ManagedString{s_CoreRegistry.String, data});
+}
+
+std::unordered_map<std::string, std::string> Capybara::ProcessLibrary(const std::filesystem::path& filePath)
+{
+    if (elf_version(EV_CURRENT) == EV_NONE)
+    {
+        std::cerr << "ELF library initialization failed." << std::endl;
+        return {};
+    }
+
+    int fd = open(filePath.c_str(), O_RDONLY);
+    if (fd < 0)
+    {
+        perror("open");
+        return {};
+    }
+
+    Elf* elf = elf_begin(fd, ELF_C_READ, nullptr);
+    if (!elf)
+    {
+        std::cerr << "elf_begin() failed: " << elf_errmsg(-1) << std::endl;
+        close(fd);
+        return {};
+    }
+
+    std::unordered_map<std::string, std::string> out;
+
+    Elf_Scn* scn = nullptr;
+    while ((scn = elf_nextscn(elf, scn)) != nullptr)
+    {
+        GElf_Shdr shdr;
+        if (gelf_getshdr(scn, &shdr) != &shdr) continue;
+
+        if (shdr.sh_type == SHT_DYNSYM)
+        {
+            Elf_Data* data = elf_getdata(scn, nullptr);
+            int symbol_count = shdr.sh_size / shdr.sh_entsize;
+
+            std::cout << "Dynamic symbols for " << filePath << ":" << std::endl;
+            for (int i = 0; i < symbol_count; ++i)
+            {
+                GElf_Sym sym;
+                if (gelf_getsym(data, i, &sym) != &sym) continue;
+
+                if (sym.st_shndx == SHN_UNDEF)
+                    continue;
+
+                const char* name = elf_strptr(elf, shdr.sh_link, sym.st_name);
+                if (name && *name) {
+                    out[demangle(name)] = name;
                 }
             }
         }
-
-        elf_end(elf);
-        close(fd);
-        return out;
     }
 
-    std::unique_ptr<CapyObject> Capybara::CreateObject(CapyType* type)
+    elf_end(elf);
+    close(fd);
+    return out;
+}
+
+void Capybara::RegisterMethod(CapyType* type, const std::string& name, void (*fn)(CapyObject*))
+{
+    type->DeclaredMethods.push_back({name, fn});
+}
+
+MethodEntry Capybara::ConvertDeclaredToMethod(const DeclaredMethodEntry& d)
+{
+    return MethodEntry{d.Name, CPY_REINTERPRET_VTAB(d.fn) };
+}
+
+void Capybara::BuildVTable(CapyType* type)
+{
+    type->VTable.clear();
+
+    if (type->Parent)
     {
-        std::unique_ptr<CapyObject> obj = std::make_unique<CapyObject>();
-        obj->Type = type;
-        return obj;
+        if (type->Parent->VTable.empty() && !type->Parent->DeclaredMethods.empty())
+            BuildVTable(type->Parent);
+        type->VTable = type->Parent->VTable;
     }
 
-    void Capybara::ObjectToString(CapyObject* obj)
+    for(auto& decl : type->DeclaredMethods)
     {
-        std::cout << "Object of type " << obj->Type->Name << std::endl;
-    }
-    
-    void Capybara::CallMethod(CapyObject* obj, const std::string& methodName) {
-        for (auto& m : obj->Type->vtable) {
-        if (m.Name == methodName && m.fn) {
-            m.fn(obj);
-            return;
+        bool overridden = false;
+        for (auto& slot : type->VTable)
+        {
+            if (slot.Name == decl.Name)
+            {
+                slot.fn = CPY_REINTERPRET_VTAB(decl.fn);
+                overridden = true;
+                break;
+            }
         }
+        if (!overridden)
+            type->VTable.push_back(ConvertDeclaredToMethod(decl));
     }
-    std::cerr << "Method not found: " << methodName << std::endl;
 }
-}
-

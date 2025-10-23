@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.28.3)
+cmake_minimum_required(VERSION 4.1.2)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(Capybara LANGUAGES CXX)
 set(SRCS

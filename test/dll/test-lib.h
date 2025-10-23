@@ -5,7 +5,7 @@ namespace DLL
     class Test 
     {
     public:
-        void Print(const char* msg);
+        static void Print(const char* msg);
         void PrintAgain();
 
         static Test* Create();
