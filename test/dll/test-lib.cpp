@@ -18,3 +18,7 @@ namespace DLL
         return new Test();
     }
 }
+
+extern "C" void Print() {
+    printf("Hello from extern func!");
+}

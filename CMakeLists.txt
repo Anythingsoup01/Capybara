@@ -1,5 +1,6 @@
-cmake_minimum_required(VERSION 4.1.2)
+cmake_minimum_required(VERSION 3.28.3)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 project(Capybara LANGUAGES CXX)
 set(SRCS
     "include/Capybara/Capybara.cpp"
@@ -15,6 +16,7 @@ target_include_directories(Capybara PRIVATE
 target_link_libraries(Capybara
     dl
     elf
+    ffi
 )
 
 set(SRCS

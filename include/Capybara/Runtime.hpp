@@ -41,34 +41,6 @@ struct RuntimeValue
 
 };
 
-template<>
-int RuntimeValue::As<int>() const
-{
-    if (Type != ValueType::INT) throw std::runtime_error("Type mismatch for int");
-    return i;
-}
-
-template<>
-float RuntimeValue::As<float>() const
-{
-    if (Type != ValueType::FLOAT) throw std::runtime_error("Type mismatch for float");
-    return f;
-}
-
-template<>
-const char* RuntimeValue::As<const char*>() const
-{
-    if (Type != ValueType::STRING) throw std::runtime_error("Type mismatch for string");
-    return s.c_str();
-}
-
-template<>
-void* RuntimeValue::As<void*>() const
-{
-    if (Type != ValueType::OBJECT) throw std::runtime_error("Type mismatch for object");
-    return obj;
-}
-
 struct CapyType;
 
 struct CapyObject
@@ -87,24 +59,21 @@ struct ManagedString : CapyObject
     }
 };
 
-struct FunctionEntry
-{
-    void* (*fn)(...);
-    std::vector<ValueType> ParamTypes;
-    ValueType ReturnType;
-};
+using GenericFn = void(*)();
 
 struct MethodEntry
 {
     std::string Name;
-    void* (*fn)(CapyObject*, ...);
-    FunctionEntry Target;
+    GenericFn Fn;
+    bool External;
+    ValueType ReturnType;
+    std::vector<ValueType> ParamTypes;
 };
 
 struct DeclaredMethodEntry
 {
     std::string Name;
-    void (*fn)(CapyObject*);
+    void (*Fn)(CapyObject*);
 };
 
 

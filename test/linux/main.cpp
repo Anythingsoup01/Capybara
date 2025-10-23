@@ -1,4 +1,5 @@
 #include "Capybara.h"
+#include "Runtime.hpp"
 #include <iostream>
 
 int main(int argc, char** argv) 
@@ -23,6 +24,6 @@ int main(int argc, char** argv)
     Capybara::AddLibrary("test/dll/test-lib.so");
 
     auto testLib = Capybara::GetObject("test-lib.so");
-
-
+    Capybara::SetParameters(testLib, "Print", ValueType::VOID);
+    Capybara::CallMethod(testLib, "Print");
 }
