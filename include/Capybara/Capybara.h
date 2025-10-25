@@ -22,8 +22,14 @@ public:
 
     static std::unique_ptr<ManagedString> CreateManagedString(const std::string& data);
 
-    static void SetParameters(CapyObject* obj, const std::string& methodName, const ValueType& returnType = ValueType::VOID, const std::vector<ValueType>& params = {});
 private:
+
+    static ValueType ParseTokenType(const std::string& token);
+    static void ParseSignature(const std::string& demangledSignature, ValueType& outReturn, std::vector<ValueType>& outParams);
+    static bool IsClassMethod(const std::string& demangledSignature);
+    static MethodKind GetMethodKind(const std::string& demangled, const std::string& mangled);
+    static void SetParameters(CapyType* type, const std::string& methodName, const ValueType& returnType = ValueType::VOID, const std::vector<ValueType>& params = {});
+
     static std::unordered_map<std::string, std::string> ProcessLibrary(const std::filesystem::path& filePath);
 
     static void RegisterMethod(CapyType* type, const std::string& name, void (*fn)(CapyObject*));
@@ -31,7 +37,6 @@ private:
 
     static void BuildVTable(CapyType* type);
 
-    
     static MethodEntry LoadExternalMethod(const std::string& name, void* handle);
     static void* CallExternalMethod(MethodEntry* method, const std::vector<RuntimeValue>& values);
 

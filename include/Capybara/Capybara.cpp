@@ -71,6 +71,14 @@ namespace Utils {
         std::cout << std::endl;
     }
 
+    inline std::string Trim(const std::string& str)
+    {
+        size_t a = str.find_first_not_of(" \t\n\r");
+        if (a == std::string::npos) return nullptr;
+        size_t b = str.find_last_not_of(" \t\n\r");
+        return str.substr(a, b - a + 1);
+    }
+
     ffi_type* GetFFIType(ValueType type)
     {
         switch (type) 
@@ -85,16 +93,22 @@ namespace Utils {
         return &ffi_type_void;
     }
 
-    void* GetFFIArgPtr(const RuntimeValue& val)
+    void* GetFFIArgPtr(RuntimeValue& val)
     {
         switch (val.Type) 
         {
-            case ValueType::INT: return (void*)&val.i;
-            case ValueType::FLOAT: return (void*)&val.f;
-            case ValueType::STRING: return (void*)val.s.c_str();
-            case ValueType::OBJECT: return val.obj;
+            case ValueType::INT: return &val.i;
+            case ValueType::FLOAT: return &val.f;
+            case ValueType::STRING:
+            case ValueType::OBJECT: return &val.obj;
             default: return nullptr;
         }
+    }
+
+    bool IsStaticFromMangled(const std::string& mangledName)
+    {
+        // This only really applies for GCC/Clang cases
+        return (mangledName.find("Ev") != std::string::npos) || (mangledName.find("EP") != std::string::npos);
     }
 }
 
@@ -154,15 +168,15 @@ void Capybara::InitCapy()
 
 bool Capybara::AddLibrary(const std::filesystem::path& filePath) // TODO: We should take a second argument for flags
 {
-    void* instance = dlmopen(LM_ID_NEWLM, filePath.c_str(), RTLD_LAZY | RTLD_LOCAL);
+    void* instance = dlmopen(LM_ID_NEWLM, filePath.c_str(), RTLD_NOW | RTLD_LOCAL);
 
     if (!instance)
     {
-        dlclose(instance);
         std::cerr << "ERROR: " << dlerror() << std::endl;
         return false;
     }
     auto obj = CreateObject();
+    obj->LibraryHandle = instance;
     obj->LibraryName = filePath.filename().string();
 
     std::unordered_map<std::string, std::string> symbols = ProcessLibrary(filePath);
@@ -180,7 +194,15 @@ bool Capybara::AddLibrary(const std::filesystem::path& filePath) // TODO: We sho
         {
             continue;
         }
+
+        MethodKind kind = GetMethodKind(demangledName, mangledName);
         
+        ValueType retType = ValueType::VOID;
+        std::vector<ValueType> paramTypes;
+        ParseSignature(demangledName, retType, paramTypes);
+
+        if (kind == MethodKind::CLASS_INSTANCE && !Utils::IsStaticFromMangled(mangledName))
+            paramTypes.insert(paramTypes.begin(), ValueType::OBJECT);
 
         std::string tmp = demangledName;
         size_t firstParenthesi = tmp.find_first_of('(');
@@ -190,16 +212,21 @@ bool Capybara::AddLibrary(const std::filesystem::path& filePath) // TODO: We sho
         std::cout << tmp << std::endl;
 
         MethodEntry method = LoadExternalMethod(tmp, func);
+        method.ReturnType = retType;
+        method.ParamTypes = paramTypes;
 
+        if (!obj->Type)
+        {
+            std::cout << "ERROR: obj->Type is null!\n";
+            return false;
+        }
 
-        obj->Type->VTable.push_back(method);
+        obj->Type->VTable.push_back(std::move(method));
 
     }
 
     AllocateCapyObject(obj);
 
-    dlclose(instance);
-    instance = nullptr;
 
     return true;
 }
@@ -216,7 +243,7 @@ void* Capybara::CallMethod(CapyObject* obj, const std::string& methodName, const
     if (method->External)
         return CallExternalMethod(method, values);
 
-    return CPY_REINTERPRET_VTAB(method->Fn)(obj);
+    return CPY_REINTERPRET_VTAB(method->Fn)(obj, values.data());
 }
 
 MethodEntry Capybara::LoadExternalMethod(const std::string& name, void* handle)
@@ -225,28 +252,35 @@ MethodEntry Capybara::LoadExternalMethod(const std::string& name, void* handle)
     method.Name = name;
     method.Fn = CPY_REINTERPRET_GEN(handle);
     method.External = true;
+    method.ReturnType = ValueType::VOID;
+    method.ParamTypes = {};
     return method;
 }
 
 void* Capybara::CallExternalMethod(MethodEntry* method, const std::vector<RuntimeValue>& values)
 {
     if (!method || !method->Fn) return nullptr;
+    if (method->ParamTypes.size() != values.size())
+        throw std::runtime_error("Too many arguments provided!");
 
     size_t nargs = values.size();
+
     std::vector<ffi_type*> ffiArgTypes(nargs);
     std::vector<void*> ffiArgValues(nargs);
+    std::vector<RuntimeValue> localValues = values;
 
     for (size_t i = 0; i < nargs; ++i)
     {
         ffiArgTypes[i] = Utils::GetFFIType(method->ParamTypes[i]);
-        ffiArgValues[i] = Utils::GetFFIArgPtr(values[i]);
+        ffiArgValues[i] = Utils::GetFFIArgPtr(localValues[i]);
     }
+
     ffi_cif cif;
     ffi_type* ffiRet = Utils::GetFFIType(method->ReturnType);
 
-    if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, nargs, ffiRet, ffiArgTypes.data()) != FFI_OK)
+    if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, nargs, ffiRet, const_cast<ffi_type**>(ffiArgTypes.data())) != FFI_OK)
     {
-        std::cerr << "FFI prep failed!\n";
+        std::cerr << "[CallExternalMethod] ffi_prep_cfi failed\n";
         return nullptr;
     }
 
@@ -256,8 +290,7 @@ void* Capybara::CallExternalMethod(MethodEntry* method, const std::vector<Runtim
         void* p;
     } ret;
 
-    ffi_call(&cif, FFI_FN(method->Fn), &ret, ffiArgValues.data());
-
+    ffi_call(&cif, FFI_FN(method->Fn), &ret, const_cast<void**>(ffiArgValues.data()));
     switch(method->ReturnType)
     {
         case ValueType::INT: return new int(ret.i);
@@ -286,7 +319,7 @@ void Capybara::AllocateCapyObject(std::unique_ptr<CapyObject>& obj)
 
 std::unique_ptr<CapyObject> Capybara::CreateObject()
 {
-    return std::make_unique<CapyObject>(CapyObject{ "Object", s_CoreRegistry.Object });
+    return std::make_unique<CapyObject>(CapyObject{ "Object", nullptr, s_CoreRegistry.Object });
 }
 
 std::unique_ptr<ManagedString> Capybara::CreateManagedString(const std::string& data)
@@ -294,9 +327,125 @@ std::unique_ptr<ManagedString> Capybara::CreateManagedString(const std::string& 
     return std::make_unique<ManagedString>(ManagedString{s_CoreRegistry.String, data});
 }
 
-void Capybara::SetParameters(CapyObject* obj, const std::string& methodName, const ValueType& returnType, const std::vector<ValueType>& params)
+ValueType Capybara::ParseTokenType(const std::string& token)
 {
-    MethodEntry* method = GetMethod(obj, methodName);
+    std::string t = Utils::Trim(token);
+
+    // Common matches
+    if (t.find("int") != std::string::npos && t.find("int64") == std::string::npos) return ValueType::INT;
+    if (t.find("float") != std::string::npos || t.find("double") != std::string::npos) return ValueType::FLOAT;
+
+    // const char* or char*
+    if (t.find("const char*") != std::string::npos || t.find("char*") != std::string::npos
+        || t.find("const char *") != std::string::npos || t.find("char *") != std::string::npos)
+        return ValueType::STRING;
+
+    // void
+    if (t == "void" || t == "void ") return ValueType::VOID;
+
+    // If token contains "std::string" treat as STRING (caller must handle constructing std::string if needed)
+    if (t.find("std::string") != std::string::npos || t.find("basic_string") != std::string::npos)
+        return ValueType::STRING;
+
+    // pointers/references -> treat as OBJECT fallback
+    if (t.find('*') != std::string::npos || t.find('&') != std::string::npos)
+        return ValueType::OBJECT;
+
+    // Fallback to object for user-defined/class types
+    return ValueType::OBJECT;
+}
+
+void Capybara::ParseSignature(const std::string& demangledSignature, ValueType& outReturn, std::vector<ValueType>& outParams)
+{
+    // Clear an existing data, i.e garbage data
+    outParams.clear();
+    outReturn = ValueType::VOID;
+
+    // Find the parameters
+    size_t parenOpen = demangledSignature.find("(");
+    size_t paremClose = std::string::npos;
+    if (parenOpen != std::string::npos)
+        paremClose = demangledSignature.find(")", parenOpen);
+
+    // Looking for the return type
+    size_t functionNamePos = demangledSignature.rfind("::");
+    size_t lastSpace = demangledSignature.find(" ");
+
+    std::string returnToken;
+    if (lastSpace != std::string::npos)
+        returnToken = demangledSignature.substr(0, lastSpace);
+    else if (parenOpen != std::string::npos)
+        returnToken = demangledSignature.substr(0, parenOpen);
+    else
+        returnToken = "void";
+
+    outReturn = ParseTokenType(returnToken);
+
+    // Checking for parameters
+    if (parenOpen == std::string::npos || paremClose == std::string::npos || paremClose <= parenOpen + 1)
+        return;
+
+    // Putting all parameters into a string
+    std::string params = demangledSignature.substr(parenOpen + 1, paremClose - parenOpen - 1);
+    size_t pos = 0;
+    while (pos < params.size())
+    {
+        size_t comma = params.find(',', pos);
+        std::string token = (comma == std::string::npos) ? params.substr(pos) : params.substr(pos, comma - pos);
+        token = Utils::Trim(token);
+        if (!token.empty())
+            outParams.push_back(ParseTokenType(token));
+
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+}
+
+// We use this to sniff out if it's a class function, or just a namespace
+// Not foolproof, will probably make a function to set the namespace when
+// adding the library so we can instead check against that, but for now
+// we will be using it as is
+bool Capybara::IsClassMethod(const std::string& demangledSignature) // TODO: Take in a namespace parameter as well
+{
+    size_t paren = demangledSignature.find("(");
+    std::string beforeParen = (paren == std::string::npos) ? demangledSignature : demangledSignature.substr(0, paren);
+
+    beforeParen = Utils::Trim(beforeParen);
+
+    // Split by "::"
+    std::vector<std::string> parts;
+    size_t pos = 0;
+    while (true)
+    {
+        size_t found = beforeParen.find("::", pos);
+        if (found == std::string::npos) break;
+        parts.push_back(beforeParen.substr(pos, found - pos));
+        pos = found + 2;
+    }
+
+    parts.push_back(beforeParen.substr(pos));
+
+    // If it's 1 or 2, it's either global or namespaced
+    if (parts.size() <= 1) return false;
+    if (parts.size() == 2) return false;
+
+    return true;
+}
+
+MethodKind Capybara::GetMethodKind(const std::string& demangled, const std::string& mangled)
+{
+    if (!IsClassMethod(demangled))
+        return MethodKind::GLOBAL;
+
+    if (mangled.find("M") == std::string::npos)
+        return MethodKind::CLASS_STATIC;
+
+    return MethodKind::CLASS_INSTANCE;
+}
+
+void Capybara::SetParameters(CapyType* type, const std::string& methodName, const ValueType& returnType, const std::vector<ValueType>& params)
+{
+    MethodEntry* method = GetMethod(type, methodName);
     if (!method)
     {
         std::cerr << "Method doesn't exist\n";

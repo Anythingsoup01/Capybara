@@ -2,6 +2,10 @@
 #include "Runtime.hpp"
 #include <iostream>
 
+#include <dlfcn.h>
+#include <ffi.h>
+
+
 int main(int argc, char** argv) 
 {
     Capybara::InitCapy();
@@ -24,6 +28,22 @@ int main(int argc, char** argv)
     Capybara::AddLibrary("test/dll/test-lib.so");
 
     auto testLib = Capybara::GetObject("test-lib.so");
-    Capybara::SetParameters(testLib, "Print", ValueType::VOID);
-    Capybara::CallMethod(testLib, "Print");
+    void* classOBJ = Capybara::CallMethod(testLib, "DLL::Test::Create");
+
+    RuntimeValue classValue;
+    classValue.Type = ValueType::OBJECT;
+    classValue.obj = classOBJ;
+
+    std::string data = "This is a test!";
+    RuntimeValue stringValue;
+    stringValue.Type = ValueType::STRING;
+    stringValue.obj = (void*)data.c_str();
+
+    Capybara::CallMethod(testLib, "DLL::Test::Print", { classValue,  stringValue });
+
+    Capybara::CallMethod(testLib, "DLL::Test::PrintAgain", { classValue });
+
+    Capybara::CallMethod(testLib, "DLL::Test::Add", { classValue, RuntimeValue(10), RuntimeValue(12) });
+
+    return 0;
 }

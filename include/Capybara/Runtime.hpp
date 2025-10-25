@@ -7,6 +7,8 @@ typedef void CapybaraVariable;
 #include <string>
 #include <vector>
 
+#include <dlfcn.h>
+
 enum class ValueType 
 {
     INT,
@@ -46,7 +48,9 @@ struct CapyType;
 struct CapyObject
 {
     std::string LibraryName;
+    void* LibraryHandle;
     CapyType* Type;
+
 };
 
 struct ManagedString : CapyObject
@@ -60,6 +64,8 @@ struct ManagedString : CapyObject
 };
 
 using GenericFn = void(*)();
+
+enum class MethodKind { GLOBAL, CLASS_INSTANCE, CLASS_STATIC };
 
 struct MethodEntry
 {
