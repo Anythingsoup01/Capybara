@@ -20,6 +20,8 @@ Project = {
     links = {
         "dl",
         "elf",
+        "elf++",
+        "dwarf++",
         "ffi"
     },
 }

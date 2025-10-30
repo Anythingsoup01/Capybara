@@ -6,15 +6,20 @@ typedef void CapybaraVariable;
 
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include <dlfcn.h>
 
-enum class ValueType 
+
+using GenericFn = void(*)();
+
+enum class MethodKind { GLOBAL, CLASS_INSTANCE };
+
+enum class ValueType
 {
     INT,
     FLOAT,
-    STRING,
-    OBJECT,
+    POINTER,
     VOID,
 };
 
@@ -24,15 +29,14 @@ struct RuntimeValue
     union {
         int i;
         float f;
-        void* obj;
+        void* p;
     };
-    std::string s;
 
-    RuntimeValue() : Type(ValueType::VOID), obj(nullptr) {}
+    RuntimeValue() : Type(ValueType::VOID), p(nullptr) {}
     RuntimeValue(int val) : Type(ValueType::INT), i(val) {}
     RuntimeValue(float val) : Type(ValueType::FLOAT), f(val) {}
-    RuntimeValue(const std::string& val) : Type(ValueType::STRING), s(val) {}
-    RuntimeValue(void* val) : Type(ValueType::OBJECT), obj(val) {}
+    RuntimeValue(const char* val) : Type(ValueType::POINTER), p((void*)val) {}
+    RuntimeValue(void* val) : Type(ValueType::POINTER), p(val) {}
 
     template<typename T>
     T As() const
@@ -43,29 +47,24 @@ struct RuntimeValue
 
 };
 
-struct CapyType;
+
+struct CapyClass;
 
 struct CapyObject
 {
-    std::string LibraryName;
-    void* LibraryHandle;
-    CapyType* Type;
-
+    CapyClass* Type;
 };
 
 struct ManagedString : CapyObject
 {
     std::string Value;
-    ManagedString(CapyType* t, std::string v)
+    ManagedString(CapyClass* t, std::string v)
     {
         Type = t;
         Value = std::move(v);
     }
 };
 
-using GenericFn = void(*)();
-
-enum class MethodKind { GLOBAL, CLASS_INSTANCE, CLASS_STATIC };
 
 struct MethodEntry
 {
@@ -82,17 +81,17 @@ struct DeclaredMethodEntry
     void (*Fn)(CapyObject*);
 };
 
-
-struct CapyType
+// Type Object, ManagedString, Int32
+struct CapyClass
 {
     std::string Name;
-    CapyType* Parent;
+    CapyClass* Parent;
     unsigned int InstanceSize;
     std::vector<MethodEntry> VTable;
     std::vector<DeclaredMethodEntry> DeclaredMethods;
 
 
-    CapyType(const std::string& name, CapyType* parent, size_t size)
+    CapyClass(const std::string& name, CapyClass* parent, size_t size)
         : Name(name), Parent(parent), InstanceSize(size), VTable(), DeclaredMethods() {}
 };
 
@@ -100,9 +99,23 @@ struct CapyType
 
 struct CoreTypeRegistry
 {
-    CapyType* Object;
-    CapyType* String;
-    CapyType* Int32;
-    CapyType* Array;
-    std::vector<CapyType*> Customs;
+    CapyClass* Object;
+    CapyClass* String;
+    CapyClass* Int32;
+    CapyClass* Array;
+    std::vector<CapyClass*> Customs;
+};
+
+struct Parameter
+{
+    std::string ParameterType;
+    std::string ParameterName;
+};
+
+struct Symbol
+{
+    std::string DemangledName;
+    MethodKind Kind;
+    std::string ReturnType;
+    std::vector<Parameter> Parameters;
 };

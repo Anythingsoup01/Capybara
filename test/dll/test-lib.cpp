@@ -15,7 +15,7 @@ namespace DLL
             m_PreviousMessage = "(null)";
         }
 
-        printf( "Got :%s\n", msg ? msg : "(null)");
+        printf( "Got : %s\n", msg ? msg : "(null)");
     }
 
     void Test::PrintAgain()
@@ -25,7 +25,7 @@ namespace DLL
 
     void Test::Add(int a, int b)
     {
-        printf("Result: %d", a + b);
+        printf("Result: %d\n", a + b);
     }
 
     Test* Test::Create()
@@ -34,5 +34,16 @@ namespace DLL
         std::cout << "Creating a new Test object: " << test << std::endl;
         return test;
     }
+
+    void ThisIsInDLL(char daddy)
+    {
+
+    }
+
+}
+
+int ThisIsCompleleyOpen(const char* first, int second, float third)
+{
+
 }
 

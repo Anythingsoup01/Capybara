@@ -6,6 +6,33 @@
 #include <ffi.h>
 
 
+class CapyWrapper
+{
+public:
+    CapyWrapper(const std::string& classNamespace, const std::string& className)
+		: m_ClassNamespace(classNamespace), m_ClassName(className)
+	{
+        m_CapyClass = Capybara::GetClassObject(classNamespace, className);
+	}
+	CapyObject* Instantiate()
+	{
+		return nullptr;
+	}
+	MethodEntry* GetMethod(const char* methodName, int parameterCount)
+	{
+		//return mono_class_get_method_from_name(m_MonoClass, methodName, parameterCount);
+	}
+	CapyObject* InvokeMethod(CapyObject* instance, MethodEntry* method, void** params)
+	{
+		//return mono_runtime_invoke(method, instance, params, nullptr);
+	}
+private:
+    std::string m_ClassNamespace, m_ClassName;
+    CapyObject* m_CapyClass;
+    
+};
+
+
 int main(int argc, char** argv) 
 {
     Capybara::InitCapy();
@@ -25,25 +52,27 @@ int main(int argc, char** argv)
         std::cout << "From the GetValue(): " << *strPtr << std::endl;
     }
 
-    Capybara::AddLibrary("test/dll/test-lib.so");
+    bool status = Capybara::AddLibrary("test/dll/test-lib.so");
+
+    if (!status)
+    {
+        std::cerr << "Failed to load library!\n";
+        return -1;
+    }
 
     auto testLib = Capybara::GetObject("test-lib.so");
-    void* classOBJ = Capybara::CallMethod(testLib, "DLL::Test::Create");
+    
+    CapyWrapper testClass("DLL", "Test");
 
-    RuntimeValue classValue;
-    classValue.Type = ValueType::OBJECT;
-    classValue.obj = classOBJ;
+    void* classOBJ = Capybara::CallMethod(testLib, "Create");
 
-    std::string data = "This is a test!";
-    RuntimeValue stringValue;
-    stringValue.Type = ValueType::STRING;
-    stringValue.obj = (void*)data.c_str();
 
-    Capybara::CallMethod(testLib, "DLL::Test::Print", { classValue,  stringValue });
 
-    Capybara::CallMethod(testLib, "DLL::Test::PrintAgain", { classValue });
+    Capybara::CallMethod(testLib, "Print", { classOBJ, "This is a test"  });
 
-    Capybara::CallMethod(testLib, "DLL::Test::Add", { classValue, RuntimeValue(10), RuntimeValue(12) });
+    Capybara::CallMethod(testLib, "PrintAgain", { classOBJ });
+
+    Capybara::CallMethod(testLib, "Add", { classOBJ, 10, 12 });
 
     return 0;
 }

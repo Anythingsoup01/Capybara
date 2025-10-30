@@ -1,20 +1,17 @@
 #include "Capybara.h"
 #include "Runtime.hpp"
 #include <dlfcn.h>
-#include <exception>
 #include <link.h>
 #include <iostream>
-#include <libelf.h>
-#include <gelf.h>
 #include <fcntl.h>
-#include <memory>
 #include <stdexcept>
-#include <unistd.h>
 #include <cxxabi.h>
 #include <signal.h>
 #include <ffi.h>
 
-#include <Runtime.hpp>
+#include <libelfin/elf/elf++.hh>
+#include <libelfin/dwarf/dwarf++.hh>
+#include <gelf.h>
 
 #define CPY_API_ASSERT(x, ...) if (!(x)) { printf("ERROR: %s", __VA_ARGS__); raise(SIGTRAP); }
 
@@ -42,22 +39,38 @@ float RuntimeValue::As<float>() const
 template<>
 const char* RuntimeValue::As<const char*>() const
 {
-    if (Type != ValueType::STRING) throw std::runtime_error("Type mismatch for string");
-    return s.c_str();
+    if (Type != ValueType::POINTER) throw std::runtime_error("Type mismatch for string");
+    return (const char*)p;
 }
 
 template<>
 void* RuntimeValue::As<void*>() const
 {
-    if (Type != ValueType::OBJECT) throw std::runtime_error("Type mismatch for object");
-    return obj;
+    if (Type != ValueType::POINTER) throw std::runtime_error("Type mismatch for object");
+    return p;
 }
 
 
-
-
 namespace Utils {
-    void PrintTypeInfo(CapyType* t)
+
+    bool StrNEqual(const std::string& mainString, const std::vector<std::string>& comparedTo)
+    {
+        bool isEqual = false;
+
+        for (auto& check : comparedTo)
+        {
+            if (mainString.length() != check.length()) continue;
+
+            if (strncmp(mainString.c_str(), check.c_str(), mainString.length()) == 0)
+            {
+                isEqual = true;
+                break;
+            }
+        }
+        return isEqual;
+    }
+
+    void PrintTypeInfo(CapyClass* t)
     {
         std::cout << "Type: " << t->Name << "\n";
         if (t->Parent)
@@ -71,22 +84,21 @@ namespace Utils {
         std::cout << std::endl;
     }
 
-    inline std::string Trim(const std::string& str)
+    inline std::string RemoveNamespace(const std::string& str)
     {
-        size_t a = str.find_first_not_of(" \t\n\r");
-        if (a == std::string::npos) return nullptr;
-        size_t b = str.find_last_not_of(" \t\n\r");
-        return str.substr(a, b - a + 1);
+        size_t a = str.find_last_of("::");
+        if (a == std::string::npos) return str;
+
+        return str.substr(a + 1);
     }
 
     ffi_type* GetFFIType(ValueType type)
     {
-        switch (type) 
+        switch (type)
         {
             case ValueType::INT: return &ffi_type_sint32;
             case ValueType::FLOAT: return &ffi_type_float;
-            case ValueType::STRING: return &ffi_type_pointer;
-            case ValueType::OBJECT: return &ffi_type_pointer;
+            case ValueType::POINTER: return &ffi_type_pointer;
             case ValueType::VOID: return &ffi_type_void;
         }
 
@@ -95,22 +107,195 @@ namespace Utils {
 
     void* GetFFIArgPtr(RuntimeValue& val)
     {
-        switch (val.Type) 
+        switch (val.Type)
         {
             case ValueType::INT: return &val.i;
             case ValueType::FLOAT: return &val.f;
-            case ValueType::STRING:
-            case ValueType::OBJECT: return &val.obj;
+            case ValueType::POINTER: return &val.p;
             default: return nullptr;
         }
     }
 
-    bool IsStaticFromMangled(const std::string& mangledName)
+    std::string GetShortName(const dwarf::die& die)
     {
-        // This only really applies for GCC/Clang cases
-        return (mangledName.find("Ev") != std::string::npos) || (mangledName.find("EP") != std::string::npos);
+        // fallback: mangled name
+        if (die.has(dwarf::DW_AT::name))
+            return die[dwarf::DW_AT::name].as_string();
+        // fallback: mangled name
+        if (die.has(dwarf::DW_AT::linkage_name))
+            return die[dwarf::DW_AT::linkage_name].as_string();
+
+        if (die.has(dwarf::DW_AT::abstract_origin))
+        {
+            auto ref = die[dwarf::DW_AT::abstract_origin].as_reference();
+            return GetShortName(ref);
+        }
+
+        if (die.has(dwarf::DW_AT::specification))
+        {
+            auto ref = die[dwarf::DW_AT::specification].as_reference();
+            return GetShortName(ref);
+        }
+
+
+        return "<anon>";
+    }
+
+    std::string ResolveType(const dwarf::die& type_die)
+    {
+        auto tag = type_die.tag;
+
+        if (type_die.has(dwarf::DW_AT::name))
+            return type_die[dwarf::DW_AT::name].as_string();
+
+        switch(tag) {
+            case dwarf::DW_TAG::pointer_type:
+                if (type_die.has(dwarf::DW_AT::type))
+                    return ResolveType(type_die[dwarf::DW_AT::type].as_reference()) + "*";
+                return "void*";
+            case dwarf::DW_TAG::const_type:
+                if (type_die.has(dwarf::DW_AT::type))
+                    return ResolveType(type_die[dwarf::DW_AT::type].as_reference()) + " const";
+                return "const";
+            case dwarf::DW_TAG::reference_type:
+                if (type_die.has(dwarf::DW_AT::type))
+                    return ResolveType(type_die[dwarf::DW_AT::type].as_reference()) + "&";
+                return "<ref>";
+            case dwarf::DW_TAG::rvalue_reference_type:
+                if (type_die.has(dwarf::DW_AT::type))
+                    return ResolveType(type_die[dwarf::DW_AT::type].as_reference()) + "&&";
+                return "<rref>";
+            default:
+                return "<unnamed-type>";
+        }
+    }
+
+    ValueType StringToValueType(const std::string& value)
+    {
+        // Should probably return a null enum or assert
+        if (value.empty())
+            return ValueType::VOID;
+
+        if (value.find("*") != std::string::npos)
+            return ValueType::POINTER;
+
+
+        if (StrNEqual(value, { "void", "void " }))
+            return ValueType::VOID;
+
+        if (StrNEqual(value, { "const std::string", "const std::string& ", "const std::string", "std::string", "std::string " }))
+            return ValueType::POINTER;
+
+        if (StrNEqual(value, { "int", "int ", "int32_t", "int32_t " }))
+            return ValueType::INT;
+
+        if (StrNEqual(value, { "float", "float " }))
+            return ValueType::FLOAT;
+
+        return ValueType::VOID;
+    }
+
+    std::vector<ValueType> StringsToValueTypes(const std::vector<Parameter>& params)
+    {
+        // Should probably return a null enum or assert
+        if (params.empty())
+            return {};
+
+        std::vector<ValueType> out;
+
+        for (auto& [type, name] : params)
+        {
+
+            if (type.find("*") != std::string::npos)
+                out.push_back(ValueType::POINTER);
+
+
+            if (StrNEqual(type, { "void", "void " }))
+                out.push_back(ValueType::VOID);
+
+            if (StrNEqual(type, { "const std::string", "const std::string& ", "const std::string", "std::string", "std::string " }))
+                out.push_back(ValueType::POINTER);
+
+            if (StrNEqual(type, { "int", "int ", "int32_t", "int32_t " }))
+                out.push_back(ValueType::INT);
+
+            if (StrNEqual(type, { "float", "float " }))
+                out.push_back(ValueType::FLOAT);
+        }
+
+        return out;
+    }
+
+    std::string GetTypeName(const dwarf::die& typeDie)
+    {
+        if (!typeDie.valid())
+            return "<unnamed>";
+
+        if (typeDie.has(dwarf::DW_AT::name))
+            return typeDie[dwarf::DW_AT::name].as_string();
+
+        if (typeDie.has(dwarf::DW_AT::type)) {
+            dwarf::die nextType = typeDie[dwarf::DW_AT::type].as_reference();
+            return GetTypeName(nextType);
+        }
+
+        return "<unnamed>";
+    }
+    std::string GetReturnType(const dwarf::die& die)
+    {
+        if (die.has(dwarf::DW_AT::type)) {
+            try {
+                dwarf::die typeDie = die[dwarf::DW_AT::type].as_reference();
+                return ResolveType(typeDie);
+            } catch (...) {
+                return "void*"; // fallback to generic pointer
+            }
+        }
+
+        // DWARF omitted return type — assume unknown, default to void*
+        return "void*";
+    }
+    void TraverseAndCollect(const dwarf::dwarf& dw, std::vector<Symbol>& outSymbols)
+    {
+        for (auto& cu : dw.compilation_units())
+        {
+            for (auto& die : cu.root())
+            {
+                if (die.tag != dwarf::DW_TAG::subprogram || !die.has(dwarf::DW_AT::low_pc))
+                    continue;
+
+                Symbol sym;
+                sym.DemangledName = GetShortName(die);
+                sym.Kind = MethodKind::GLOBAL;
+                sym.ReturnType = GetReturnType(die);
+                // Get function name
+
+                // Get return type
+
+                std::unordered_map<std::string, std::string> paramList;
+                for (auto& child : die)
+                {
+                    if (child.tag != dwarf::DW_TAG::formal_parameter)
+                        continue;
+
+                    std::string paramType = ResolveType(child[dwarf::DW_AT::type].as_reference());
+                    std::string paramName = GetShortName(child);
+
+                    if (StrNEqual(paramName, { "this" }))
+                        sym.Kind = MethodKind::CLASS_INSTANCE;
+                    else
+                        sym.Parameters.push_back({paramType, paramName});
+
+                }
+
+                outSymbols.push_back(sym);
+
+            }
+        }
     }
 }
+
+static std::vector<void*> s_Instances = {};
 
 std::string demangle(const char* name)
 {
@@ -148,9 +333,9 @@ static void* StringGetValue(CapyObject* obj)
 void Capybara::InitCapy()
 {
     s_CoreRegistry = CoreTypeRegistry();
-    CapyType* Type_Object = new CapyType("Object", nullptr, sizeof(CapyObject));
-    CapyType* Type_String = new CapyType("String", Type_Object, sizeof(ManagedString));
-    CapyType* Type_Int32 = new CapyType("Int32", Type_Object, sizeof(int32_t));
+    CapyClass* Type_Object = new CapyClass("Object", nullptr, sizeof(CapyObject));
+    CapyClass* Type_String = new CapyClass("String", Type_Object, sizeof(ManagedString));
+    CapyClass* Type_Int32 = new CapyClass("Int32", Type_Object, sizeof(int32_t));
 
     RegisterMethod(Type_Object, "ToString", CPY_REINTERPRET_DECL(ObjectToString));
     RegisterMethod(Type_String, "ToString", CPY_REINTERPRET_DECL(StringToString));
@@ -163,7 +348,17 @@ void Capybara::InitCapy()
     s_CoreRegistry.Object = Type_Object;
     s_CoreRegistry.String = Type_String;
     s_CoreRegistry.Int32 = Type_Int32;
+}
 
+void Capybara::ShutdownCapy()
+{
+    if (!s_Instances.empty())
+    {
+        for (auto* instance : s_Instances)
+        {
+            dlclose(instance);
+        }
+    }
 }
 
 bool Capybara::AddLibrary(const std::filesystem::path& filePath) // TODO: We should take a second argument for flags
@@ -179,54 +374,63 @@ bool Capybara::AddLibrary(const std::filesystem::path& filePath) // TODO: We sho
     obj->LibraryHandle = instance;
     obj->LibraryName = filePath.filename().string();
 
-    std::unordered_map<std::string, std::string> symbols = ProcessLibrary(filePath);
-    for (const auto& [demangledName, mangledName] : symbols)
+    CapyClass* type = obj->Type;
+    //               Mangled Names  SymbolStructure
+
+    
+
+    std::vector<Symbol> symbols = ProcessDwarf(filePath);
+    std::unordered_map<std::string, std::string> symbolDeclarations = ProcessLibrary(filePath);
+    for (auto& [demangledName, mangledName] : symbolDeclarations)
     {
-        
-        void* func = dlsym(instance, mangledName.c_str());
-        const char* err = dlerror();
-        if (err)
+        void* handle = dlsym(instance, mangledName.c_str());
+        if (!handle)
         {
-            std::cout << "ERROR: " << err << std::endl;
-            continue;
-        }
-        if (!func)
-        {
+            std::cerr << "ERROR: " << dlerror() << "\n";
             continue;
         }
 
-        MethodKind kind = GetMethodKind(demangledName, mangledName);
-        
-        ValueType retType = ValueType::VOID;
-        std::vector<ValueType> paramTypes;
-        ParseSignature(demangledName, retType, paramTypes);
+        Symbol matchedSymbol;
 
-        if (kind == MethodKind::CLASS_INSTANCE && !Utils::IsStaticFromMangled(mangledName))
-            paramTypes.insert(paramTypes.begin(), ValueType::OBJECT);
-
-        std::string tmp = demangledName;
-        size_t firstParenthesi = tmp.find_first_of('(');
-        if (firstParenthesi != std::string::npos)
-            tmp.erase(firstParenthesi);
-
-        std::cout << tmp << std::endl;
-
-        MethodEntry method = LoadExternalMethod(tmp, func);
-        method.ReturnType = retType;
-        method.ParamTypes = paramTypes;
-
-        if (!obj->Type)
+        std::string deNameSpacedName = Utils::RemoveNamespace(demangledName);
+        for (auto& sym : symbols)
         {
-            std::cout << "ERROR: obj->Type is null!\n";
-            return false;
+            std::string comparison = sym.DemangledName + "(";
+            bool first = true;
+            for (auto& param : sym.Parameters)
+            {
+                if (!first) comparison += ", ";
+                comparison += param.ParameterType;
+                first = false;
+            }
+            comparison += ")";
+
+            if (Utils::StrNEqual(deNameSpacedName, { comparison }))
+            {
+                matchedSymbol = sym;
+                break;
+            }
         }
 
-        obj->Type->VTable.push_back(std::move(method));
+        size_t paren = deNameSpacedName.find('(');
+        deNameSpacedName.erase(paren);
 
+        MethodEntry method = LoadExternalMethod(deNameSpacedName, handle);
+
+        if (!matchedSymbol.DemangledName.empty())
+        {
+            method.ReturnType = Utils::StringToValueType(matchedSymbol.ReturnType);
+
+            method.ParamTypes = Utils::StringsToValueTypes(matchedSymbol.Parameters);
+
+            if (matchedSymbol.Kind == MethodKind::CLASS_INSTANCE)
+                method.ParamTypes.insert(method.ParamTypes.begin(), ValueType::POINTER);
+        }
+
+        type->VTable.push_back(std::move(method));
     }
 
     AllocateCapyObject(obj);
-
 
     return true;
 }
@@ -271,14 +475,14 @@ void* Capybara::CallExternalMethod(MethodEntry* method, const std::vector<Runtim
 
     for (size_t i = 0; i < nargs; ++i)
     {
-        ffiArgTypes[i] = Utils::GetFFIType(method->ParamTypes[i]);
+        ffiArgTypes[i] = Utils::GetFFIType(localValues[i].Type);
         ffiArgValues[i] = Utils::GetFFIArgPtr(localValues[i]);
     }
 
     ffi_cif cif;
     ffi_type* ffiRet = Utils::GetFFIType(method->ReturnType);
 
-    if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, nargs, ffiRet, const_cast<ffi_type**>(ffiArgTypes.data())) != FFI_OK)
+    if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, nargs, ffiRet, ffiArgTypes.data()) != FFI_OK)
     {
         std::cerr << "[CallExternalMethod] ffi_prep_cfi failed\n";
         return nullptr;
@@ -290,13 +494,12 @@ void* Capybara::CallExternalMethod(MethodEntry* method, const std::vector<Runtim
         void* p;
     } ret;
 
-    ffi_call(&cif, FFI_FN(method->Fn), &ret, const_cast<void**>(ffiArgValues.data()));
+    ffi_call(&cif, FFI_FN(method->Fn), &ret, ffiArgValues.data());
     switch(method->ReturnType)
     {
         case ValueType::INT: return new int(ret.i);
         case ValueType::FLOAT: return new float(ret.f);
-        case ValueType::STRING: return ret.p;
-        case ValueType::OBJECT: return ret.p;
+        case ValueType::POINTER: return ret.p;
         case ValueType::VOID: return nullptr;
     }
     return nullptr;
@@ -327,137 +530,6 @@ std::unique_ptr<ManagedString> Capybara::CreateManagedString(const std::string& 
     return std::make_unique<ManagedString>(ManagedString{s_CoreRegistry.String, data});
 }
 
-ValueType Capybara::ParseTokenType(const std::string& token)
-{
-    std::string t = Utils::Trim(token);
-
-    // Common matches
-    if (t.find("int") != std::string::npos && t.find("int64") == std::string::npos) return ValueType::INT;
-    if (t.find("float") != std::string::npos || t.find("double") != std::string::npos) return ValueType::FLOAT;
-
-    // const char* or char*
-    if (t.find("const char*") != std::string::npos || t.find("char*") != std::string::npos
-        || t.find("const char *") != std::string::npos || t.find("char *") != std::string::npos)
-        return ValueType::STRING;
-
-    // void
-    if (t == "void" || t == "void ") return ValueType::VOID;
-
-    // If token contains "std::string" treat as STRING (caller must handle constructing std::string if needed)
-    if (t.find("std::string") != std::string::npos || t.find("basic_string") != std::string::npos)
-        return ValueType::STRING;
-
-    // pointers/references -> treat as OBJECT fallback
-    if (t.find('*') != std::string::npos || t.find('&') != std::string::npos)
-        return ValueType::OBJECT;
-
-    // Fallback to object for user-defined/class types
-    return ValueType::OBJECT;
-}
-
-void Capybara::ParseSignature(const std::string& demangledSignature, ValueType& outReturn, std::vector<ValueType>& outParams)
-{
-    // Clear an existing data, i.e garbage data
-    outParams.clear();
-    outReturn = ValueType::VOID;
-
-    // Find the parameters
-    size_t parenOpen = demangledSignature.find("(");
-    size_t paremClose = std::string::npos;
-    if (parenOpen != std::string::npos)
-        paremClose = demangledSignature.find(")", parenOpen);
-
-    // Looking for the return type
-    size_t functionNamePos = demangledSignature.rfind("::");
-    size_t lastSpace = demangledSignature.find(" ");
-
-    std::string returnToken;
-    if (lastSpace != std::string::npos)
-        returnToken = demangledSignature.substr(0, lastSpace);
-    else if (parenOpen != std::string::npos)
-        returnToken = demangledSignature.substr(0, parenOpen);
-    else
-        returnToken = "void";
-
-    outReturn = ParseTokenType(returnToken);
-
-    // Checking for parameters
-    if (parenOpen == std::string::npos || paremClose == std::string::npos || paremClose <= parenOpen + 1)
-        return;
-
-    // Putting all parameters into a string
-    std::string params = demangledSignature.substr(parenOpen + 1, paremClose - parenOpen - 1);
-    size_t pos = 0;
-    while (pos < params.size())
-    {
-        size_t comma = params.find(',', pos);
-        std::string token = (comma == std::string::npos) ? params.substr(pos) : params.substr(pos, comma - pos);
-        token = Utils::Trim(token);
-        if (!token.empty())
-            outParams.push_back(ParseTokenType(token));
-
-        if (comma == std::string::npos) break;
-        pos = comma + 1;
-    }
-}
-
-// We use this to sniff out if it's a class function, or just a namespace
-// Not foolproof, will probably make a function to set the namespace when
-// adding the library so we can instead check against that, but for now
-// we will be using it as is
-bool Capybara::IsClassMethod(const std::string& demangledSignature) // TODO: Take in a namespace parameter as well
-{
-    size_t paren = demangledSignature.find("(");
-    std::string beforeParen = (paren == std::string::npos) ? demangledSignature : demangledSignature.substr(0, paren);
-
-    beforeParen = Utils::Trim(beforeParen);
-
-    // Split by "::"
-    std::vector<std::string> parts;
-    size_t pos = 0;
-    while (true)
-    {
-        size_t found = beforeParen.find("::", pos);
-        if (found == std::string::npos) break;
-        parts.push_back(beforeParen.substr(pos, found - pos));
-        pos = found + 2;
-    }
-
-    parts.push_back(beforeParen.substr(pos));
-
-    // If it's 1 or 2, it's either global or namespaced
-    if (parts.size() <= 1) return false;
-    if (parts.size() == 2) return false;
-
-    return true;
-}
-
-MethodKind Capybara::GetMethodKind(const std::string& demangled, const std::string& mangled)
-{
-    if (!IsClassMethod(demangled))
-        return MethodKind::GLOBAL;
-
-    if (mangled.find("M") == std::string::npos)
-        return MethodKind::CLASS_STATIC;
-
-    return MethodKind::CLASS_INSTANCE;
-}
-
-void Capybara::SetParameters(CapyType* type, const std::string& methodName, const ValueType& returnType, const std::vector<ValueType>& params)
-{
-    MethodEntry* method = GetMethod(type, methodName);
-    if (!method)
-    {
-        std::cerr << "Method doesn't exist\n";
-        return;
-    }
-
-    if (method->Fn == nullptr)
-        throw std::runtime_error("Method has no valid function pointer");
-
-    method->ReturnType = returnType;
-    method->ParamTypes = params;
-}
 
 std::unordered_map<std::string, std::string> Capybara::ProcessLibrary(const std::filesystem::path& filePath)
 {
@@ -517,7 +589,27 @@ std::unordered_map<std::string, std::string> Capybara::ProcessLibrary(const std:
     return out;
 }
 
-void Capybara::RegisterMethod(CapyType* type, const std::string& name, void (*fn)(CapyObject*))
+std::vector<Symbol> Capybara::ProcessDwarf(const std::filesystem::path& filePath)
+{
+    std::vector<Symbol> out;
+
+    int fd = open(filePath.c_str(), O_RDONLY);
+    if (fd < 0) {
+        std::cerr << "ERROR: failed to open: " << filePath.string() << std::endl;
+        return {};
+    }
+
+    
+    elf::elf ef(elf::create_mmap_loader(fd));
+    dwarf::dwarf dw(dwarf::elf::create_loader(ef));
+
+    Utils::TraverseAndCollect(dw, out);
+
+    close(fd);
+    return out;
+}
+
+void Capybara::RegisterMethod(CapyClass* type, const std::string& name, void (*fn)(CapyObject*))
 {
     type->DeclaredMethods.push_back({name, fn});
 }
@@ -527,7 +619,7 @@ MethodEntry Capybara::ConvertDeclaredToMethod(const DeclaredMethodEntry& d)
     return MethodEntry{d.Name, CPY_REINTERPRET_GEN(d.Fn) };
 }
 
-void Capybara::BuildVTable(CapyType* type)
+void Capybara::BuildVTable(CapyClass* type)
 {
     type->VTable.clear();
 
@@ -566,7 +658,7 @@ MethodEntry* Capybara::GetMethod(CapyObject *obj, const std::string &methodName)
     return nullptr;
 }
 
-MethodEntry* Capybara::GetMethod(CapyType* type, const std::string &methodName)
+MethodEntry* Capybara::GetMethod(CapyClass* type, const std::string &methodName)
 {
     if (!type) return nullptr;
     for (auto& method : type->VTable)

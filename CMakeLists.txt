@@ -15,6 +15,8 @@ target_include_directories(Capybara PRIVATE
 target_link_libraries(Capybara
     dl
     elf
+    elf++
+    dwarf++
     ffi
 )
 
