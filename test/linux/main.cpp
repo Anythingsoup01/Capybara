@@ -5,7 +5,7 @@
 #include <dlfcn.h>
 #include <ffi.h>
 
-
+/*
 class CapyWrapper
 {
 public:
@@ -26,53 +26,33 @@ public:
 	{
 		//return mono_runtime_invoke(method, instance, params, nullptr);
 	}
+
 private:
     std::string m_ClassNamespace, m_ClassName;
     CapyObject* m_CapyClass;
     
 };
-
+*/
 
 int main(int argc, char** argv) 
 {
-    Capybara::InitCapy();
+    capy_init();
 
-    auto obj = Capybara::CreateObject();
-    Capybara::CallMethod(obj.get(), "ToString");
+    CapyDomain* d = capy_init_domain("Expansion");
 
+    CapyLibrary* l = capy_domain_library_open(d, "./test/dll/test-lib.so");
 
-    auto s = Capybara::CreateManagedString("Hello from Managed String!");
-    Capybara::CallMethod(s.get(), "ToString");
+    CapyImage* i = capy_library_get_image(l);
 
+    CapyClass* c = capy_class_from_name(i, "DLL", "Test");
 
-    void* valPtr = Capybara::CallMethod(static_cast<CapyObject*>(s.get()), "GetValue");
+    CapyMethod* m = capy_method_from_class(c, "Create");
+
+    void* valPtr = capy_function_call_from_method(m, {});
     if (valPtr)
     {
-        auto strPtr = reinterpret_cast<std::string*>(valPtr);
-        std::cout << "From the GetValue(): " << *strPtr << std::endl;
+        std::cout << "Got: " << valPtr << std::endl;
     }
-
-    bool status = Capybara::AddLibrary("test/dll/test-lib.so");
-
-    if (!status)
-    {
-        std::cerr << "Failed to load library!\n";
-        return -1;
-    }
-
-    auto testLib = Capybara::GetObject("test-lib.so");
-    
-    CapyWrapper testClass("DLL", "Test");
-
-    void* classOBJ = Capybara::CallMethod(testLib, "Create");
-
-
-
-    Capybara::CallMethod(testLib, "Print", { classOBJ, "This is a test"  });
-
-    Capybara::CallMethod(testLib, "PrintAgain", { classOBJ });
-
-    Capybara::CallMethod(testLib, "Add", { classOBJ, 10, 12 });
 
     return 0;
 }

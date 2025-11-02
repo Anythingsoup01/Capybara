@@ -8,10 +8,17 @@ namespace DLL
     public:
         void Print(const char* msg);
         void PrintAgain();
-        void Add(int a, int b);
 
         static Test* Create();
     private:
         const char* m_PreviousMessage;
+    };
+
+    class Test2 
+    {
+    public:
+        void PrintHello();
+
+        static Test2* Create();
     };
 }

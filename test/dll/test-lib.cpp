@@ -2,8 +2,20 @@
 #include <stdio.h>
 #include <iostream>
 
+
+void* MyObject = nullptr;
+
+void PrintObject()
+{
+    if (MyObject)
+        std::cout << "Object Has Data : " << MyObject << " \n";
+    else
+        std::cout << "Object has no data!\n";
+}
+
 namespace DLL
 {
+    int NamespacedVar = 10;
     void Test::Print(const char* msg)
     {
         if (msg)
@@ -23,11 +35,6 @@ namespace DLL
         printf( "Reprinting : %s\n", m_PreviousMessage);
     }
 
-    void Test::Add(int a, int b)
-    {
-        printf("Result: %d\n", a + b);
-    }
-
     Test* Test::Create()
     {
         Test* test = new Test();
@@ -35,15 +42,25 @@ namespace DLL
         return test;
     }
 
-    void ThisIsInDLL(char daddy)
+    void Test2::PrintHello()
+    {
+        printf("Hello World");
+    }
+
+    Test2* Test2::Create()
+    {
+        Test2* test = new Test2();
+        std::cout << "Creating a new Test object: " << test << std::endl;
+        return test;
+    }
+
+    void ThisIsInANamespace()
     {
 
     }
-
 }
 
-int ThisIsCompleleyOpen(const char* first, int second, float third)
-{
+
+void OutOfNamespace() {
 
 }
-

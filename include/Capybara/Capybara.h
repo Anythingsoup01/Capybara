@@ -1,49 +1,41 @@
 #pragma once
 
 #include <filesystem>
-#include <memory>
-#include <unordered_map>
-
-
 
 #include "Runtime.hpp"
 
-class Capybara
-{
-public:
-    static void InitCapy();
-    static void ShutdownCapy();
+/*
+ *  Initialize Capybara, not so needed in this early version,
+ *  but as time goes on, we'll need it for memory allocations
+ */
+void capy_init();
 
-    static bool AddLibrary(const std::filesystem::path& filePath);
+/*
+ *  Shutdown Capybara, used to free all loaded libraries
+ */
+void capy_shutdown();
 
-    static CapyObject* GetClassObject(const std::string& classNamespace, const std::string& className);
+CapyDomain* capy_init_domain(const std::string& name);
 
-    static void* CallMethod(CapyObject* obj, const std::string& methodName, const std::vector<RuntimeValue>& values = {});
+CapyLibrary* capy_domain_library_open(CapyDomain* cd, const std::filesystem::path& libPath);
 
-    static std::unique_ptr<CapyObject> CreateObject();
-    static CapyObject* GetObject(const std::string& libName);
+CapyImage* capy_library_get_image(CapyLibrary* cl);
 
-    static std::unique_ptr<ManagedString> CreateManagedString(const std::string& data);
+CapyClass* capy_class_from_name(CapyImage* ci, const std::string& nameSpace, const std::string& className);
 
-private:
-    static std::vector<ValueType> SetParameters(const std::string demangledName, MethodKind kind, const std::vector<std::string>& parameters);
+CapyMethod* capy_method_from_class(CapyClass* cc, const std::string& functionName);
 
-    static std::vector<Symbol> ProcessDwarf(const std::filesystem::path& filePath);
-    static std::unordered_map<std::string, std::string> ProcessLibrary(const std::filesystem::path& filePath);
+CapyField* capy_field_from_class(CapyClass* cc, const std::string& fieldName);
 
-    static void RegisterMethod(CapyClass* type, const std::string& name, void (*fn)(CapyObject*));
-    static MethodEntry ConvertDeclaredToMethod(const DeclaredMethodEntry& d);
 
-    static void BuildVTable(CapyClass* type);
+void capy_field_data_get_from_class(CapyClass* cc, const std::string& fieldName, void* value);
 
-    static MethodEntry LoadExternalMethod(const std::string& name, void* handle);
-    static void* CallExternalMethod(MethodEntry* method, const std::vector<RuntimeValue>& values);
+void capy_field_data_get_from_field(CapyField* cf, const std::string& fieldName, void* value);
 
-    static void AllocateCapyObject(std::unique_ptr<CapyObject>& obj);
-public:
-    static MethodEntry* GetMethod(CapyObject* obj, const std::string& methodName);
-    static MethodEntry* GetMethod(CapyClass* type, const std::string& methodName);
-private:
-    static inline CoreTypeRegistry s_CoreRegistry = CoreTypeRegistry();
-    static inline std::vector<std::unique_ptr<CapyObject>> s_LoadedLibraries = {};
-};
+
+void capy_field_data_set_from_class(CapyClass* cc, const std::string& fieldName, void* value);
+
+void capy_field_data_set_from_field(CapyField* cf, const std::string& fieldName, void* value);
+
+void* capy_function_call_from_method(CapyMethod* cm, const std::vector<RuntimeValue>& values);
+

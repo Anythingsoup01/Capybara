@@ -1,30 +1,29 @@
 #pragma once
 #include <stdexcept>
-
-
-typedef void CapybaraVariable;
-
-#include <string>
 #include <vector>
 #include <unordered_map>
+#include <memory>
 
-#include <dlfcn.h>
 
-
-using GenericFn = void(*)();
-
-enum class MethodKind { GLOBAL, CLASS_INSTANCE };
-
-enum class ValueType
-{
-    INT,
-    FLOAT,
-    POINTER,
-    VOID,
+struct Symbol {
+    std::string Namespace;
+    std::string ClassName;
+    std::string Name;
+    std::string Signature;
+    std::string ReturnType;
+    std::vector<std::string> ParameterTypes;
+    bool IsVariable;
+    bool IsClassInstance;
 };
 
-struct RuntimeValue
-{
+enum class ValueType {
+    VOID = 0,
+    INT32,
+    FLOAT,
+    POINTER,
+};
+
+struct RuntimeValue {
     ValueType Type;
     union {
         int i;
@@ -33,7 +32,7 @@ struct RuntimeValue
     };
 
     RuntimeValue() : Type(ValueType::VOID), p(nullptr) {}
-    RuntimeValue(int val) : Type(ValueType::INT), i(val) {}
+    RuntimeValue(int val) : Type(ValueType::INT32), i(val) {}
     RuntimeValue(float val) : Type(ValueType::FLOAT), f(val) {}
     RuntimeValue(const char* val) : Type(ValueType::POINTER), p((void*)val) {}
     RuntimeValue(void* val) : Type(ValueType::POINTER), p(val) {}
@@ -44,78 +43,49 @@ struct RuntimeValue
         throw std::runtime_error("Unsupported Conversion!");
     }
 
-
 };
 
-
-struct CapyClass;
-
-struct CapyObject
-{
-    CapyClass* Type;
+struct CapyField {
+    void* SymHandle;
+    ValueType FieldType;
 };
 
-struct ManagedString : CapyObject
-{
-    std::string Value;
-    ManagedString(CapyClass* t, std::string v)
-    {
-        Type = t;
-        Value = std::move(v);
-    }
-};
-
-
-struct MethodEntry
-{
-    std::string Name;
-    GenericFn Fn;
-    bool External;
+struct CapyMethod {
+    void* SymHandle;
     ValueType ReturnType;
-    std::vector<ValueType> ParamTypes;
+    std::vector<ValueType> Parameters;
 };
 
-struct DeclaredMethodEntry
-{
-    std::string Name;
-    void (*Fn)(CapyObject*);
+struct CapyVTable {
+    std::unordered_map<std::string, std::unique_ptr<CapyMethod>> Methods;
+    std::unordered_map<std::string, std::unique_ptr<CapyField>> Fields;
 };
 
-// Type Object, ManagedString, Int32
-struct CapyClass
-{
-    std::string Name;
-    CapyClass* Parent;
-    unsigned int InstanceSize;
-    std::vector<MethodEntry> VTable;
-    std::vector<DeclaredMethodEntry> DeclaredMethods;
+struct CapyClass {
+    //                  Name
+    std::unordered_map<std::string, Symbol> Symbols;
+    std::unique_ptr<CapyVTable> VTable;
 
-
-    CapyClass(const std::string& name, CapyClass* parent, size_t size)
-        : Name(name), Parent(parent), InstanceSize(size), VTable(), DeclaredMethods() {}
 };
 
-
-
-struct CoreTypeRegistry
-{
-    CapyClass* Object;
-    CapyClass* String;
-    CapyClass* Int32;
-    CapyClass* Array;
-    std::vector<CapyClass*> Customs;
+struct CapyImage {
+    std::unordered_map<std::string, std::unique_ptr<CapyClass>> Classes;
 };
 
-struct Parameter
-{
-    std::string ParameterType;
-    std::string ParameterName;
+struct CapyLibrary {
+    std::unique_ptr<CapyImage> MainImage;
+    
+    CapyLibrary(CapyImage* mainImage)
+        : MainImage(std::move(mainImage)) {}
 };
 
-struct Symbol
-{
-    std::string DemangledName;
-    MethodKind Kind;
-    std::string ReturnType;
-    std::vector<Parameter> Parameters;
+struct CapyDomain {
+    std::unordered_map<std::string, std::unique_ptr<CapyLibrary>> Libraries;
+
+};
+
+struct Storage {
+    std::unordered_map<std::string, std::unique_ptr<CapyDomain>> Domains;
+    std::vector<void*> SymbolInstances;
+    std::vector<std::string> KnownClassNames;
 };
