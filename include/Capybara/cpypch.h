@@ -10,6 +10,7 @@
 #include <vector>
 #include <unordered_map>
 #include <memory>
+#include <filesystem>
 
 #include <libelfin/elf/elf++.hh>
 #include <libelfin/dwarf/dwarf++.hh>

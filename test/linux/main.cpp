@@ -5,50 +5,48 @@
 #include <dlfcn.h>
 #include <ffi.h>
 
-/*
+
 class CapyWrapper
 {
 public:
-    CapyWrapper(const std::string& classNamespace, const std::string& className)
-		: m_ClassNamespace(classNamespace), m_ClassName(className)
+    CapyWrapper(CapyImage* ci, const std::string& nameSpace, const std::string& className)
+		: m_ClassNamespace(nameSpace), m_ClassName(className)
 	{
-        m_CapyClass = Capybara::GetClassObject(classNamespace, className);
+        m_CapyClass = capy_class_from_name(ci, nameSpace, className);
 	}
-	CapyObject* Instantiate()
+	CapyMethod* GetMethod(const char* methodName)
 	{
-		return nullptr;
+		return capy_method_from_class(m_CapyClass, methodName);
 	}
-	MethodEntry* GetMethod(const char* methodName, int parameterCount)
+	void* InvokeMethod(CapyMethod* method, const std::vector<RuntimeValue>& params)
 	{
-		//return mono_class_get_method_from_name(m_MonoClass, methodName, parameterCount);
-	}
-	CapyObject* InvokeMethod(CapyObject* instance, MethodEntry* method, void** params)
-	{
-		//return mono_runtime_invoke(method, instance, params, nullptr);
+		return capy_function_call_from_method(method, params);
 	}
 
 private:
     std::string m_ClassNamespace, m_ClassName;
-    CapyObject* m_CapyClass;
-    
+    CapyClass* m_CapyClass;
 };
-*/
+
 
 int main(int argc, char** argv) 
 {
-    capy_init();
+    capy_set_libraries_path("build");
 
     CapyDomain* d = capy_init_domain("Expansion");
 
-    CapyLibrary* l = capy_domain_library_open(d, "./test/dll/test-lib.so");
+    capy_reload_libraries_into_domain(d);
+
+    CapyLibrary* l = capy_domain_library_open(d, "libtest-lib.so");
 
     CapyImage* i = capy_library_get_image(l);
 
-    CapyClass* c = capy_class_from_name(i, "DLL", "Test");
+    CapyWrapper cw(i, "DLL", "Test");
 
-    CapyMethod* m = capy_method_from_class(c, "Create");
 
-    void* valPtr = capy_function_call_from_method(m, {});
+    CapyMethod* m = cw.GetMethod("Create");
+
+    void* valPtr = cw.InvokeMethod(m, {});
     if (valPtr)
     {
         std::cout << "Got: " << valPtr << std::endl;

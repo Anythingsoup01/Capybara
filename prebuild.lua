@@ -1,5 +1,8 @@
 Workspace = {
-    name = "Capybara"
+    name = "Capybara",
+    flags = {
+        "-fPIC",
+    },
 }
 
 Project = {
@@ -47,3 +50,24 @@ Project = {
         "Capybara"
     },
 }
+
+Project = {
+    name = "test-lib",
+    kind = "SharedLib",
+    language = "C++",
+    dialect = "20",
+
+    files = {
+        "./test/dll/test-lib.cpp",
+        "./test/dll/test-lib.h",
+    },
+
+    includedirs = {
+        "test/dll",
+    },
+
+    flags = {
+        "-gdwarf-2"
+    }
+}
+

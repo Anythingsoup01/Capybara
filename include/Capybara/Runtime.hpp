@@ -83,4 +83,5 @@ struct Storage {
     std::unordered_map<std::string, std::unique_ptr<CapyDomain>> Domains;
     std::vector<void*> SymbolInstances;
     std::vector<std::string> KnownClassNames;
+    std::filesystem::path SearchPath;
 };

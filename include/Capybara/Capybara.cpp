@@ -1,7 +1,9 @@
+#include "Runtime.hpp"
 #include "cpypch.h"
 #include "Capybara.h"
 #include "Utility.h"
 
+#include <filesystem>
 #include <libelfin/elf/elf++.hh>
 #include <libelfin/dwarf/dwarf++.hh>
 
@@ -229,7 +231,10 @@ void capy_shutdown()
     }
 }
 
-
+void capy_set_libraries_path(const std::filesystem::path &libPath)
+{
+    s_Storage.SearchPath = libPath;
+}
 
 CapyDomain* capy_init_domain(const std::string& name)
 {
@@ -245,20 +250,43 @@ CapyDomain* capy_init_domain(const std::string& name)
     return d;
 }
 
-CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::filesystem::path& libPath)
+void capy_unload_domain(CapyDomain *cd)
 {
+    
+}
 
-int fd = open(libPath.c_str(), O_RDONLY);
-    if (!fd)
+void capy_reload_libraries_into_domain(CapyDomain* cd)
+{
+    for (auto& entry : std::filesystem::directory_iterator(s_Storage.SearchPath))
     {
-        std::cerr << "ERROR: failed to open file: " << libPath.generic_string() << "\n";
-        return nullptr;
+        if (entry.is_regular_file() && entry.path().extension() == ".so")
+        {
+            capy_domain_library_open(cd, entry.path().filename());
+        }
+    }
+}
+
+CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName)
+{
+    std::filesystem::path libPath = s_Storage.SearchPath;
+    libPath.append(libName);
+
+    int fd = open(libPath.c_str(), O_RDONLY);
+    if (fd < 0 && !s_Storage.SearchPath.empty())
+    {
+        fd = open(libName.c_str(), O_RDONLY);
+        if (fd < 0)
+        {
+            std::cerr << "ERROR: failed to open file: " << libPath.generic_string() << "\n";
+            return nullptr;
+        }
+        libPath = std::filesystem::path(libName);
     }
 
-    if (d->Libraries.find(libPath.c_str()) != d->Libraries.end())
+
+    if (d->Libraries.find(libPath.filename().string()) != d->Libraries.end())
     {
-        std::cerr << "ERROR: library '" << libPath.c_str() << "' already exists!\n";
-        return nullptr;
+        return d->Libraries.at(libPath.filename().string()).get();
     }
 
     elf::elf ef(elf::create_mmap_loader(fd));
@@ -312,7 +340,6 @@ int fd = open(libPath.c_str(), O_RDONLY);
                 Klass->Symbols[sym.Name] = sym;
                 if (sym.IsVariable)
                 {
-                    std::cout << sym.Name << "\n";
                     CapyField* fld = new CapyField;
                     fld->SymHandle = handle;
                     fld->FieldType = string_to_value_type(sym.ReturnType);
@@ -371,9 +398,9 @@ int fd = open(libPath.c_str(), O_RDONLY);
 
     CapyLibrary* library = new CapyLibrary(image);
 
-    d->Libraries.emplace(std::pair<std::string, std::unique_ptr<CapyLibrary>>(libPath.generic_string(), std::move(library)));
+    d->Libraries.emplace(std::pair<std::string, std::unique_ptr<CapyLibrary>>(libPath.filename().c_str(), std::move(library)));
 
-    return d->Libraries.at(libPath.generic_string()).get();
+    return d->Libraries.at(libPath.filename().string()).get();
 
 
 }
@@ -413,7 +440,7 @@ void capy_field_data_get_from_class(CapyClass* cc, const std::string& fieldName,
     memcpy(value, f->SymHandle, type_size(f->FieldType));
 }
 
-void capy_field_data_get_from_field(CapyField* cf, const std::string& fieldName, void* value)
+void capy_field_data_get_from_field(CapyField* cf, void* value)
 {
     memcpy(value, cf->SymHandle, type_size(cf->FieldType));
 }
@@ -424,7 +451,7 @@ void capy_field_data_set_from_class(CapyClass* cf, const std::string& fieldName,
     memcpy(f->SymHandle, value, type_size(f->FieldType));
 }
 
-void capy_field_data_set_from_field(CapyField* cf, const std::string& fieldName, void* value)
+void capy_field_data_set_from_field(CapyField* cf, void* value)
 {
     memcpy(cf->SymHandle, value, type_size(cf->FieldType));
 }
@@ -452,7 +479,7 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
 
     if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, nargs, ffiRet, ffiArgTypes.data()) != FFI_OK)
     {
-        std::cerr << "[CallExternalMethod] ffi_prep_cfi failed\n";
+        std::cerr << "ffi_prep_cfi failed\n";
         return nullptr;
     }
 
