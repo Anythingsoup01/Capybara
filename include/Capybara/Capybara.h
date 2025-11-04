@@ -15,7 +15,7 @@ void capy_set_libraries_path(const std::filesystem::path& libPath);
 CapyDomain* capy_init_domain(const std::string& name);
 
 // This function is used to unload a domain and all it's libraries
-void capy_unload_domain(CapyDomain* cd);
+void capy_unload_domain(const std::string& domainName);
 
 // This function is combined with the default search path to look in a
 // given directory and get every library, for accurate information

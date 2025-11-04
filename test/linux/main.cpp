@@ -52,5 +52,7 @@ int main(int argc, char** argv)
         std::cout << "Got: " << valPtr << std::endl;
     }
 
+    capy_unload_domain("Expansion");
+
     return 0;
 }

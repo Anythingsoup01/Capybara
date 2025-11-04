@@ -3,9 +3,9 @@
 #include "Capybara.h"
 #include "Utility.h"
 
-#include <filesystem>
 #include <libelfin/elf/elf++.hh>
 #include <libelfin/dwarf/dwarf++.hh>
+#include <memory>
 
 static Storage s_Storage;
 
@@ -222,12 +222,10 @@ void capy_init()
 
 void capy_shutdown()
 {
-    if (!s_Storage.SymbolInstances.empty())
+    for (auto& [name, domain] : s_Storage.Domains)
     {
-        for (auto* instance : s_Storage.SymbolInstances)
-        {
-            dlclose(instance);
-        }
+        CapyDomain* d = domain.get();
+        capy_unload_domain(name);
     }
 }
 
@@ -244,15 +242,17 @@ CapyDomain* capy_init_domain(const std::string& name)
         return nullptr;
     }
 
-    auto* d = s_Storage.Domains[name].get();
-    d = std::move(new CapyDomain);
-
-    return d;
+    auto domain = std::make_unique<CapyDomain>();
+    CapyDomain* ptr = domain.get();
+    s_Storage.Domains[name] = std::move(domain);
+    return ptr;
 }
 
-void capy_unload_domain(CapyDomain *cd)
+void capy_unload_domain(const std::string& domainName)
 {
-    
+    auto it = s_Storage.Domains.find(domainName);
+    if (it != s_Storage.Domains.end())
+        s_Storage.Domains.erase(it);
 }
 
 void capy_reload_libraries_into_domain(CapyDomain* cd)
@@ -311,7 +311,7 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName)
         return nullptr;
     }
 
-    s_Storage.SymbolInstances.push_back(instance);
+
 
     std::unordered_map<std::string, std::unique_ptr<CapyClass>> classes;
 
@@ -340,14 +340,14 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName)
                 Klass->Symbols[sym.Name] = sym;
                 if (sym.IsVariable)
                 {
-                    CapyField* fld = new CapyField;
-                    fld->SymHandle = handle;
-                    fld->FieldType = string_to_value_type(sym.ReturnType);
-                    Klass->VTable->Fields.emplace(std::pair<std::string, std::unique_ptr<CapyField>>(sym.Name, std::move(fld)));
+                    std::unique_ptr<CapyField> field = std::make_unique<CapyField>();
+                    field->SymHandle = handle;
+                    field->FieldType = string_to_value_type(sym.ReturnType);
+                    Klass->VTable->Fields[sym.Name] = std::move(field);
                 }
                 else
                 {
-                    CapyMethod* method = new CapyMethod;
+                    std::unique_ptr<CapyMethod> method = std::make_unique<CapyMethod>();
                     method->SymHandle = handle;
                     method->ReturnType = string_to_value_type(sym.ReturnType);
                     if (sym.IsClassInstance)
@@ -359,7 +359,7 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName)
                         if (type != ValueType::VOID)
                             method->Parameters.push_back(type);
                     }
-                    Klass->VTable->Methods.emplace(std::pair<std::string, std::unique_ptr<CapyMethod>>(sym.Name, std::move(method)));
+                    Klass->VTable->Methods[sym.Name] = std::move(method);
                 }
                 found = true;
             }
@@ -367,28 +367,32 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName)
 
         if (!found)
         {
-            classes.emplace(std::pair<std::string, std::unique_ptr<CapyClass>>(fullName, std::move(new CapyClass)));
-            auto& Klass = classes[fullName];
-            Klass->VTable.reset(new CapyVTable);
+            std::unique_ptr<CapyClass> klass = std::make_unique<CapyClass>();
+            classes[fullName] = std::move(klass);
+            std::unique_ptr<CapyVTable> vtable = std::make_unique<CapyVTable>();
+            classes[fullName]->VTable = std::move(vtable);
             if (sym.IsVariable)
             {
-                CapyField* fld = new CapyField;
-                fld->SymHandle = handle;
-                fld->FieldType = string_to_value_type(sym.ReturnType);
-                Klass->VTable->Fields.emplace(std::pair<std::string, std::unique_ptr<CapyField>>(sym.Name, std::move(fld)));
+                std::unique_ptr<CapyField> field = std::make_unique<CapyField>();
+                field->SymHandle = handle;
+                field->FieldType = string_to_value_type(sym.ReturnType);
+                classes[fullName]->VTable->Fields[sym.Name] = std::move(field);
             }
             else
             {
-                CapyMethod* method = new CapyMethod;
+                std::unique_ptr<CapyMethod> method = std::make_unique<CapyMethod>();
                 method->SymHandle = handle;
                 method->ReturnType = string_to_value_type(sym.ReturnType);
+                if (sym.IsClassInstance)
+                    method->Parameters.push_back(ValueType::POINTER);
+
                 for (auto& param : sym.ParameterTypes)
                 {
                     ValueType type = string_to_value_type(param);
                     if (type != ValueType::VOID)
                         method->Parameters.push_back(type);
                 }
-                Klass->VTable->Methods.emplace(std::pair<std::string, std::unique_ptr<CapyMethod>>(sym.Name, std::move(method)));
+                classes[fullName]->VTable->Methods[sym.Name] = std::move(method);
             }
 
         }
@@ -396,9 +400,10 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName)
 
     image->Classes = std::move(classes);
 
-    CapyLibrary* library = new CapyLibrary(image);
+    std::unique_ptr<CapyLibrary> library = std::make_unique<CapyLibrary>(image);
+    library->SymbolInstance = std::move(instance);
 
-    d->Libraries.emplace(std::pair<std::string, std::unique_ptr<CapyLibrary>>(libPath.filename().c_str(), std::move(library)));
+    d->Libraries[libPath.filename().c_str()] = std::move(library);
 
     return d->Libraries.at(libPath.filename().string()).get();
 
@@ -482,6 +487,8 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
         std::cerr << "ffi_prep_cfi failed\n";
         return nullptr;
     }
+
+
 
     union {
         int i;

@@ -69,7 +69,8 @@ struct CapyImage {
 
 struct CapyLibrary {
     std::unique_ptr<CapyImage> MainImage;
-    
+    void* SymbolInstance;
+
     CapyLibrary(CapyImage* mainImage)
         : MainImage(std::move(mainImage)) {}
 };
@@ -81,7 +82,6 @@ struct CapyDomain {
 
 struct Storage {
     std::unordered_map<std::string, std::unique_ptr<CapyDomain>> Domains;
-    std::vector<void*> SymbolInstances;
     std::vector<std::string> KnownClassNames;
     std::filesystem::path SearchPath;
 };
