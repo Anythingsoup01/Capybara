@@ -1,13 +1,18 @@
-cmake_minimum_required(VERSION 4.1.2)
+cmake_minimum_required(VERSION 3.28.3)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(Capybara LANGUAGES CXX)
 set(SRCS
+    "include/Capybara/Utility.cpp"
     "include/Capybara/Capybara.cpp"
+    "include/Capybara/Runtime.cpp"
     "include/Capybara/Capybara.h"
+    "include/Capybara/cpypch.h"
+    "include/Capybara/Utility.h"
 )
 add_library(Capybara STATIC ${SRCS})
 set_property(TARGET Capybara PROPERTY CXX_STANDARD 20)
 
+target_precompile_headers(Capybara PUBLIC include/Capybara/cpypch.h)
 target_include_directories(Capybara PRIVATE
     "include/Capybara"
 )

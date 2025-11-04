@@ -8,6 +8,8 @@ Project = {
     language = "C++",
     dialect = "20",
 
+    pch = "include/Capybara/cpypch.h",
+
     files = {
         "./include/Capybara/*.cpp",
         "./include/Capybara/*.h",
