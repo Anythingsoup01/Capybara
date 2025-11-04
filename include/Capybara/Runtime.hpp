@@ -1,9 +1,4 @@
 #pragma once
-#include <stdexcept>
-#include <vector>
-#include <unordered_map>
-#include <memory>
-
 
 struct Symbol {
     std::string Namespace;

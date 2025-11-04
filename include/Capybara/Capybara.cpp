@@ -1,227 +1,13 @@
+#include "cpypch.h"
 #include "Capybara.h"
-
-#include <iostream>
-#include <fcntl.h>
-#include <unistd.h>
-#include <cxxabi.h>
-#include <ffi.h>
-#include <dlfcn.h>
+#include "Utility.h"
 
 #include <libelfin/elf/elf++.hh>
 #include <libelfin/dwarf/dwarf++.hh>
 
-template<>
-int RuntimeValue::As<int>() const
-{
-    if (Type != ValueType::INT32) throw std::runtime_error("Type mismatch for int");
-    return i;
-}
-
-template<>
-float RuntimeValue::As<float>() const
-{
-    if (Type != ValueType::FLOAT) throw std::runtime_error("Type mismatch for float");
-    return f;
-}
-
-template<>
-const char* RuntimeValue::As<const char*>() const
-{
-    if (Type != ValueType::POINTER) throw std::runtime_error("Type mismatch for string");
-    return (const char*)p;
-}
-
-template<>
-void* RuntimeValue::As<void*>() const
-{
-    if (Type != ValueType::POINTER) throw std::runtime_error("Type mismatch for object");
-    return p;
-}
-
-
 static Storage s_Storage;
 
-static std::string demangle(const char* name)
-{
-    int status = 0;
-    // Call the ABI demangling function
-    char* demangled = abi::__cxa_demangle(name, nullptr, nullptr, &status);
-    if (status == 0) {
-        std::string result(demangled);
-        free(demangled);
-        return result;
-    }
-    return name;
-}
-
-static bool StrsNEqual(const std::string& mainString, const std::vector<std::string>& comparedTo)
-{
-    bool isEqual = false;
-
-
-
-    for (auto& check : comparedTo)
-    {
-        if (strncmp(mainString.c_str(), check.c_str(), check.length()) == 0)
-        {
-            isEqual = true;
-            break;
-        }
-    }
-    return isEqual;
-}
-
-// This one checks the length
-static bool StrNEqual(const std::string& mainString, const std::string& comparedTo)
-{
-    if (mainString.length() != comparedTo.length())
-        return false;
-
-    if (strncmp(mainString.c_str(), comparedTo.c_str(), mainString.length()) == 0)
-    {
-        return true;
-    }
-
-    return false;
-}
-
-static ValueType StringToValueType(const std::string& value)
-{
-    // Should probably return a null enum or assert
-    if (value.empty())
-        return ValueType::VOID;
-
-    if (value.find("*") != std::string::npos)
-        return ValueType::POINTER;
-
-
-    if (StrsNEqual(value, { "void", "void " }))
-        return ValueType::VOID;
-
-    if (StrsNEqual(value, { "const std::string", "const std::string& ", "const std::string", "std::string", "std::string " }))
-        return ValueType::POINTER;
-
-    if (StrsNEqual(value, { "int", "int ", "int32_t", "int32_t " }))
-        return ValueType::INT32;
-
-    if (StrsNEqual(value, { "float", "float " }))
-        return ValueType::FLOAT;
-
-    return ValueType::VOID;
-}
-
-ffi_type* GetFFIType(ValueType type)
-{
-    switch (type)
-    {
-        case ValueType::INT32: return &ffi_type_sint32;
-        case ValueType::FLOAT: return &ffi_type_float;
-        case ValueType::POINTER: return &ffi_type_pointer;
-        case ValueType::VOID: return &ffi_type_void;
-    }
-
-    return &ffi_type_void;
-}
-
-void* GetFFIArgPtr(RuntimeValue& val)
-{
-    switch (val.Type)
-    {
-        case ValueType::INT32: return &val.i;
-        case ValueType::FLOAT: return &val.f;
-        case ValueType::POINTER: return &val.p;
-        default: return nullptr;
-    }
-}
-
-size_t type_size(ValueType type)
-{
-    switch (type)
-    {
-        case ValueType::FLOAT: return sizeof(float);
-        case ValueType::INT32: return sizeof(int32_t);
-        case ValueType::POINTER: return sizeof(void*);
-        case ValueType::VOID: return 0;
-    }
-
-    return 0;
-}
-
-// Get the name of a type DIE
-static std::string GetShortName(const dwarf::die& die)
-{
-    // fallback: mangled name
-    if (die.has(dwarf::DW_AT::name))
-        return die[dwarf::DW_AT::name].as_string();
-    // fallback: mangled name
-    if (die.has(dwarf::DW_AT::linkage_name))
-        return die[dwarf::DW_AT::linkage_name].as_string();
-
-    return "<anon>";
-}
-
-static std::string ResolveType(const dwarf::die& type_die)
-{
-    auto tag = type_die.tag;
-
-    if (type_die.has(dwarf::DW_AT::name))
-        return type_die[dwarf::DW_AT::name].as_string();
-
-    switch(tag) {
-        case dwarf::DW_TAG::pointer_type:
-            if (type_die.has(dwarf::DW_AT::type))
-                return ResolveType(type_die[dwarf::DW_AT::type].as_reference()) + "*";
-            return "void*";
-        case dwarf::DW_TAG::const_type:
-            if (type_die.has(dwarf::DW_AT::type))
-                return ResolveType(type_die[dwarf::DW_AT::type].as_reference()) + " const";
-            return "const";
-        case dwarf::DW_TAG::reference_type:
-            if (type_die.has(dwarf::DW_AT::type))
-                return ResolveType(type_die[dwarf::DW_AT::type].as_reference()) + "&";
-            return "<ref>";
-        case dwarf::DW_TAG::rvalue_reference_type:
-            if (type_die.has(dwarf::DW_AT::type))
-                return ResolveType(type_die[dwarf::DW_AT::type].as_reference()) + "&&";
-            return "<rref>";
-        default:
-            return "<unnamed-type>";
-    }
-}
-
-static std::string GetTypeName(const dwarf::die& typeDie)
-{
-    if (!typeDie.valid())
-        return "<unnamed>";
-
-    if (typeDie.has(dwarf::DW_AT::name))
-        return typeDie[dwarf::DW_AT::name].as_string();
-
-    if (typeDie.has(dwarf::DW_AT::type)) {
-        dwarf::die nextType = typeDie[dwarf::DW_AT::type].as_reference();
-        return GetTypeName(nextType);
-    }
-
-    return "<unnamed>";
-}
-
-static std::string GetReturnType(const dwarf::die& die)
-{
-    if (die.has(dwarf::DW_AT::type)) {
-        try {
-            dwarf::die typeDie = die[dwarf::DW_AT::type].as_reference();
-            return ResolveType(typeDie);
-        } catch (...) {
-            return "void*"; // fallback to generic pointer
-        }
-    }
-
-    // DWARF omitted return type — assume unknown, default to void*
-    return "void*";
-}
-
-
-static void UpdateSymbolNamespaces(std::vector<Symbol>& symbols)
+static void update_symbol_namespaces(std::vector<Symbol>& symbols)
 {
     for (auto& sym : symbols)
     {
@@ -245,10 +31,9 @@ static void UpdateSymbolNamespaces(std::vector<Symbol>& symbols)
     }
 }
 
-// Recursively walk DIEs and print functions
-static void TraverseAndCollect(const dwarf::die& d, std::vector<std::string>& scope_stack, std::vector<Symbol>& outSymbols)
+static void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_stack, std::vector<Symbol>& outSymbols)
 {
-    std::string name = GetShortName(d);
+    std::string name = get_short_name(d);
 
     // Keep track of scopes
     bool is_scope = (d.tag == dwarf::DW_TAG::namespace_ ||
@@ -258,7 +43,7 @@ static void TraverseAndCollect(const dwarf::die& d, std::vector<std::string>& sc
 
     if (is_scope && !name.empty())
     {
-        if (StrsNEqual(name, { "std", "__gnu_", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" }))
+        if (strs_n_equal(name, { "std", "__gnu_", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" }))
             return;
 
         scope_stack.push_back(name);
@@ -279,12 +64,12 @@ static void TraverseAndCollect(const dwarf::die& d, std::vector<std::string>& sc
         // If we get an instance of Class* this,
         // then we will convert it to the ClassName.
         Symbol sym;
-        std::string name = GetShortName(d);
-        if (StrsNEqual(name, {"<anon>"}))
+        std::string name = get_short_name(d);
+        if (strs_n_equal(name, {"<anon>"}))
             return;
         sym.Name = name;
         sym.Namespace = qualified_name;
-        sym.ReturnType = GetReturnType(d);
+        sym.ReturnType = get_return_type(d);
         sym.IsVariable = false;
         sym.IsClassInstance = false;
 
@@ -294,7 +79,7 @@ static void TraverseAndCollect(const dwarf::die& d, std::vector<std::string>& sc
             if (child.tag != dwarf::DW_TAG::formal_parameter)
                 continue;
 
-            std::string paramType = ResolveType(child[dwarf::DW_AT::type].as_reference());
+            std::string paramType = resolve_type(child[dwarf::DW_AT::type].as_reference());
             size_t pointer = paramType.rfind("*");
             if (pointer != std::string::npos)
             {
@@ -351,12 +136,12 @@ static void TraverseAndCollect(const dwarf::die& d, std::vector<std::string>& sc
         // If we get an instance of Class* this,
         // then we will convert it to the ClassName.
         Symbol sym;
-        std::string name = GetShortName(d);
-        if (StrsNEqual(name, {"<anon>"}))
+        std::string name = get_short_name(d);
+        if (strs_n_equal(name, {"<anon>"}))
             return;
         sym.Name = name;
         sym.Namespace = qualified_name;
-        sym.ReturnType = GetReturnType(d);
+        sym.ReturnType = get_return_type(d);
         sym.IsVariable = true;
 
         outSymbols.push_back(sym);
@@ -364,13 +149,13 @@ static void TraverseAndCollect(const dwarf::die& d, std::vector<std::string>& sc
     }
 
     for (auto &child : d)
-        TraverseAndCollect(child, scope_stack, outSymbols);
+        traverse_and_collect(child, scope_stack, outSymbols);
 
     if (is_scope && !name.empty())
         scope_stack.pop_back();
 }
 
-static std::vector<Symbol> ProcessLibrary(const elf::elf& ef, const std::vector<Symbol>& symbols)
+static std::vector<Symbol> process_library(const elf::elf& ef, const std::vector<Symbol>& symbols)
 {
     std::unordered_map<std::string, std::string> symbolNames;
     for (auto &sec : ef.sections())
@@ -383,7 +168,7 @@ static std::vector<Symbol> ProcessLibrary(const elf::elf& ef, const std::vector<
             auto &d = sym.get_data();
             if (d.shnxd == elf::shn::undef) continue;
 
-            std::string demangledName = demangle(sym.get_name().c_str());
+            std::string demangledName = demangle_symbol_name(sym.get_name().c_str());
 
             size_t paren = demangledName.find("(");
             if (paren != std::string::npos)
@@ -483,13 +268,13 @@ int fd = open(libPath.c_str(), O_RDONLY);
     std::vector<Symbol> symbols;
 
     for (auto &cu : dw.compilation_units())
-        TraverseAndCollect(cu.root(), *(new std::vector<std::string>), symbols);
+        traverse_and_collect(cu.root(), *(new std::vector<std::string>), symbols);
 
     close(fd);
 
-    UpdateSymbolNamespaces(symbols);
+    update_symbol_namespaces(symbols);
 
-    symbols = ProcessLibrary(ef, symbols);
+    symbols = process_library(ef, symbols);
 
     void* instance = dlmopen(LM_ID_NEWLM, libPath.c_str(), RTLD_LAZY | RTLD_LOCAL);
     if (!instance)
@@ -522,7 +307,7 @@ int fd = open(libPath.c_str(), O_RDONLY);
 
         for (auto& [fullNameSpace, Klass] : classes)
         {
-            if (StrNEqual(fullNameSpace, fullName))
+            if (str_n_equal(fullNameSpace, fullName))
             {
                 Klass->Symbols[sym.Name] = sym;
                 if (sym.IsVariable)
@@ -530,20 +315,20 @@ int fd = open(libPath.c_str(), O_RDONLY);
                     std::cout << sym.Name << "\n";
                     CapyField* fld = new CapyField;
                     fld->SymHandle = handle;
-                    fld->FieldType = StringToValueType(sym.ReturnType);
+                    fld->FieldType = string_to_value_type(sym.ReturnType);
                     Klass->VTable->Fields.emplace(std::pair<std::string, std::unique_ptr<CapyField>>(sym.Name, std::move(fld)));
                 }
                 else
                 {
                     CapyMethod* method = new CapyMethod;
                     method->SymHandle = handle;
-                    method->ReturnType = StringToValueType(sym.ReturnType);
+                    method->ReturnType = string_to_value_type(sym.ReturnType);
                     if (sym.IsClassInstance)
                         method->Parameters.push_back(ValueType::POINTER);
 
                     for (auto& param : sym.ParameterTypes)
                     {
-                        ValueType type = StringToValueType(param);
+                        ValueType type = string_to_value_type(param);
                         if (type != ValueType::VOID)
                             method->Parameters.push_back(type);
                     }
@@ -562,17 +347,17 @@ int fd = open(libPath.c_str(), O_RDONLY);
             {
                 CapyField* fld = new CapyField;
                 fld->SymHandle = handle;
-                fld->FieldType = StringToValueType(sym.ReturnType);
+                fld->FieldType = string_to_value_type(sym.ReturnType);
                 Klass->VTable->Fields.emplace(std::pair<std::string, std::unique_ptr<CapyField>>(sym.Name, std::move(fld)));
             }
             else
             {
                 CapyMethod* method = new CapyMethod;
                 method->SymHandle = handle;
-                method->ReturnType = StringToValueType(sym.ReturnType);
+                method->ReturnType = string_to_value_type(sym.ReturnType);
                 for (auto& param : sym.ParameterTypes)
                 {
-                    ValueType type = StringToValueType(param);
+                    ValueType type = string_to_value_type(param);
                     if (type != ValueType::VOID)
                         method->Parameters.push_back(type);
                 }
@@ -658,12 +443,12 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
 
     for (size_t i = 0; i < nargs; ++i)
     {
-        ffiArgTypes[i] = GetFFIType(localValues[i].Type);
-        ffiArgValues[i] = GetFFIArgPtr(localValues[i]);
+        ffiArgTypes[i] = get_ffi_type_p(localValues[i].Type);
+        ffiArgValues[i] = get_ffi_arg_p(localValues[i]);
     }
 
     ffi_cif cif;
-    ffi_type* ffiRet = GetFFIType(method->ReturnType);
+    ffi_type* ffiRet = get_ffi_type_p(method->ReturnType);
 
     if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, nargs, ffiRet, ffiArgTypes.data()) != FFI_OK)
     {
@@ -687,4 +472,3 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
     }
     return nullptr;
 }
-
