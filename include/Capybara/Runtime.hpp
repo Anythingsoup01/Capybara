@@ -60,7 +60,8 @@ struct CapyClass {
     //                  Name
     std::unordered_map<std::string, Symbol> Symbols;
     std::unique_ptr<CapyVTable> VTable;
-
+    std::string NameSpace;
+    std::string ClassName;
 };
 
 struct CapyImage {

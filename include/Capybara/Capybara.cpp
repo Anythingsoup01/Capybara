@@ -370,6 +370,8 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName)
         if (!found)
         {
             std::unique_ptr<CapyClass> klass = std::make_unique<CapyClass>();
+            klass->NameSpace = sym.Namespace;
+            klass->ClassName = sym.ClassName;
             classes[fullName] = std::move(klass);
             std::unique_ptr<CapyVTable> vtable = std::make_unique<CapyVTable>();
             classes[fullName]->VTable = std::move(vtable);
