@@ -14,11 +14,8 @@ namespace DLL
         const char* m_PreviousMessage;
     };
 
-    class Test2 
-    {
+    class IgnoreThis {
     public:
-        void PrintHello();
-
-        static Test2* Create();
+        void CantSeeMe();
     };
 }

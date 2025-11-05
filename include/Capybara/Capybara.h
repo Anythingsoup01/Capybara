@@ -2,6 +2,10 @@
 
 #include "Runtime.hpp"
 
+// This function initializes our strorage, calling init basically
+// just clears the storage and sets default values.
+void capy_init();
+
 /*
  *  Shutdown Capybara, used to free all loaded libraries
  */
@@ -10,12 +14,31 @@ void capy_shutdown();
 // This function let's the user set a default search path for libraries
 void capy_set_libraries_path(const std::filesystem::path& libPath);
 
+// This function lets you specify a namespace you want to ignore,
+// narrowing down any extra namespaces you want to get rid of,
+// calling this twice will only increase the amount of namespaces it's ignoring,
+// you should not call this in an infinite loop.
+void capy_set_ignored_namespace(const std::vector<std::string>& ignoredNamespace);
+
+// This function will ignore completely empty namespaces, however, if there
+// is a class name it will treat it as a namespace
+void capy_set_ignore_empty_namespace(bool active);
+
+// This function lets you specify any classes you'd like to ignore,
+// I.e. Helper classes, not all that usefull but wanted some continuity
+// between the namespace and classname portion of our symbols
+void capy_set_ignored_classname(const std::vector<std::string>& ignoredClassnames);
+
 // This function will initialize a new domain, if it exists already it'll
 // return nullptr for memory security
 CapyDomain* capy_init_domain(const std::string& name);
 
 // This function is used to unload a domain and all it's libraries
 void capy_unload_domain(const std::string& domainName);
+
+// This is a utility function that dumps the contents of a given domain
+// returns a string that can be printed normally or with a logging system
+std::string capy_dump_domain(const std::string& domainName);
 
 // This function is combined with the default search path to look in a
 // given directory and get every library, for accurate information

@@ -9,29 +9,36 @@
 class CapyWrapper
 {
 public:
-    CapyWrapper(CapyImage* ci, const std::string& nameSpace, const std::string& className)
-		: m_ClassNamespace(nameSpace), m_ClassName(className)
+    CapyWrapper(CapyImage* ci, const char* nameSpace, const char* className)
 	{
         m_CapyClass = capy_class_from_name(ci, nameSpace, className);
 	}
 	CapyMethod* GetMethod(const char* methodName)
 	{
-		return capy_method_from_class(m_CapyClass, methodName);
-	}
+        if (m_CapyClass)
+		    return capy_method_from_class(m_CapyClass, methodName);
+	    return nullptr;
+    }
 	void* InvokeMethod(CapyMethod* method, const std::vector<RuntimeValue>& params)
 	{
+        if (!method)
+            return nullptr;
+
 		return capy_function_call_from_method(method, params);
 	}
 
 private:
-    std::string m_ClassNamespace, m_ClassName;
     CapyClass* m_CapyClass;
 };
 
 
 int main(int argc, char** argv) 
 {
+    capy_init();
+
     capy_set_libraries_path("build");
+
+    capy_set_ignored_classname({"IgnoreThis"});
 
     CapyDomain* d = capy_init_domain("Expansion");
 
@@ -44,13 +51,17 @@ int main(int argc, char** argv)
     CapyWrapper cw(i, "DLL", "Test");
 
 
-    CapyMethod* m = cw.GetMethod("Create");
+    CapyMethod* cm = cw.GetMethod("Create");
+    CapyMethod* pm = cw.GetMethod("Print");
+    CapyMethod* pam = cw.GetMethod("PrintAgain");
 
-    void* valPtr = cw.InvokeMethod(m, {});
-    if (valPtr)
-    {
-        std::cout << "Got: " << valPtr << std::endl;
-    }
+    void* valPtr = cw.InvokeMethod(cm, {});
+
+    cw.InvokeMethod(pm, {cm, "This is my message!"});
+
+    cw.InvokeMethod(pam, {cm});
+
+    std::cout << capy_dump_domain("Expansion");
 
     capy_unload_domain("Expansion");
 

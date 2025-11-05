@@ -84,5 +84,8 @@ struct CapyDomain {
 struct Storage {
     std::unordered_map<std::string, std::unique_ptr<CapyDomain>> Domains;
     std::vector<std::string> KnownClassNames;
+    std::vector<std::string> IgnoredNamespaces;
+    std::vector<std::string> IgnoredClassNames;
+    bool IgnoreEmptyNamespaces;
     std::filesystem::path SearchPath;
 };

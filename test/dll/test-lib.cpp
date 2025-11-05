@@ -42,16 +42,9 @@ namespace DLL
         return test;
     }
 
-    void Test2::PrintHello()
+    void IgnoreThis::CantSeeMe()
     {
-        printf("Hello World");
-    }
-
-    Test2* Test2::Create()
-    {
-        Test2* test = new Test2();
-        std::cout << "Creating a new Test object: " << test << std::endl;
-        return test;
+        std::cout << "AHHHHHHHHHH\n";
     }
 
     void ThisIsInANamespace()
