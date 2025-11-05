@@ -3,6 +3,7 @@
 #include "Capybara.h"
 #include "Utility.h"
 
+#include <exception>
 #include <libelfin/dwarf/data.hh>
 #include <libelfin/elf/elf++.hh>
 #include <libelfin/dwarf/dwarf++.hh>
@@ -392,8 +393,13 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName)
     }
 
     elf::elf ef(elf::create_mmap_loader(fd));
-    dwarf::dwarf dw(dwarf::elf::create_loader(ef));
-
+    dwarf::dwarf dw;
+    try {
+        dw = dwarf::dwarf(dwarf::elf::create_loader(ef));
+    } catch (std::exception& e)
+    {
+        std::cerr << "ERROR: " << e.what() << "\n";
+    }
     CapyImage* image = new CapyImage;
     std::vector<Symbol> symbols;
 

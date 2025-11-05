@@ -1,10 +1,3 @@
-cmake_minimum_required(VERSION 3.28.3)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-project(Capybara LANGUAGES CXX)
-add_compile_options(
-    -fPIC
-)
-
 set(SRCS
     "include/Capybara/Utility.cpp"
     "include/Capybara/Capybara.cpp"
@@ -27,35 +20,5 @@ target_link_libraries(Capybara
     elf++
     dwarf++
     ffi
-)
-
-set(SRCS
-    "./test/linux/main.cpp"
-)
-add_executable(test-linux-exe ${SRCS})
-set_property(TARGET test-linux-exe PROPERTY CXX_STANDARD 20)
-
-target_include_directories(test-linux-exe PRIVATE
-    "test/linux"
-    "include/Capybara"
-)
-
-target_link_libraries(test-linux-exe
-    Capybara
-)
-
-set(SRCS
-    "./test/dll/test-lib.cpp"
-    "./test/dll/test-lib.h"
-)
-add_library(test-lib SHARED ${SRCS})
-set_property(TARGET test-lib PROPERTY CXX_STANDARD 20)
-
-target_include_directories(test-lib PRIVATE
-    "test/dll"
-)
-
-target_compile_options(test-lib PRIVATE
-    -gdwarf-2
 )
 
