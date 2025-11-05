@@ -81,6 +81,8 @@ static void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& 
             if (child.tag != dwarf::DW_TAG::formal_parameter)
                 continue;
 
+            if (!child.has(dwarf::DW_AT::type))
+                continue;
             std::string paramType = resolve_type(child[dwarf::DW_AT::type].as_reference());
             size_t pointer = paramType.rfind("*");
             if (pointer != std::string::npos)

@@ -1,17 +1,13 @@
-cmake_minimum_required(VERSION 3.28.3)
+cmake_minimum_required(VERSION 4.1.2)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(Capybara LANGUAGES CXX)
-add_compile_options(
-    -fPIC
-)
-
 set(SRCS
-    "include/Capybara/Utility.cpp"
     "include/Capybara/Capybara.cpp"
     "include/Capybara/Runtime.cpp"
-    "include/Capybara/Capybara.h"
-    "include/Capybara/cpypch.h"
+    "include/Capybara/Utility.cpp"
     "include/Capybara/Utility.h"
+    "include/Capybara/cpypch.h"
+    "include/Capybara/Capybara.h"
 )
 add_library(Capybara STATIC ${SRCS})
 set_property(TARGET Capybara PROPERTY CXX_STANDARD 20)
@@ -53,9 +49,5 @@ set_property(TARGET test-lib PROPERTY CXX_STANDARD 20)
 
 target_include_directories(test-lib PRIVATE
     "test/dll"
-)
-
-target_compile_options(test-lib PRIVATE
-    -gdwarf-2
 )
 
