@@ -61,7 +61,6 @@ target_link_libraries(test-lib
 
 target_compile_options(test-lib PRIVATE
     -gdwarf-2
-    -O0
 )
 
 set(SRCS

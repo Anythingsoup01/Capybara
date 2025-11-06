@@ -1,4 +1,3 @@
-#include "Runtime.hpp"
 #include "cpypch.h"
 #include "Capybara.h"
 #include "Utility.h"
@@ -391,8 +390,13 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
     }
 
     elf::elf ef(elf::create_mmap_loader(fd));
-    dwarf::dwarf dw(dwarf::elf::create_loader(ef));
-
+    dwarf::dwarf dw;
+    try {
+        dw = dwarf::dwarf(dwarf::elf::create_loader(ef));
+    } catch (std::exception& e)
+    {
+        std::cerr << "ERROR: " << e.what() << "\n";
+    }
     CapyImage* image = new CapyImage;
     std::vector<Symbol> symbols;
 
