@@ -3,19 +3,17 @@
 #include <iostream>
 
 
-void* MyObject = nullptr;
-
-void PrintObject()
-{
-    if (MyObject)
-        std::cout << "Object Has Data : " << MyObject << " \n";
-    else
-        std::cout << "Object has no data!\n";
-}
-
 namespace DLL
 {
+
     int NamespacedVar = 10;
+
+    class InCPPFile
+    {
+    public:
+        void Test() {}
+    };
+
     void Test::Print(const char* msg)
     {
         if (msg)
@@ -41,19 +39,5 @@ namespace DLL
         std::cout << "Creating a new Test object: " << test << std::endl;
         return test;
     }
-
-    void IgnoreThis::CantSeeMe()
-    {
-        std::cout << "AHHHHHHHHHH\n";
-    }
-
-    void ThisIsInANamespace()
-    {
-
-    }
 }
 
-
-void OutOfNamespace() {
-
-}

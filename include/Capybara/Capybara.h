@@ -51,7 +51,19 @@ void capy_reload_libraries_into_domain(CapyDomain* cd);
 // if the user want's to use a library not in the path, providing the
 // path should allow the user to open it anyways due to a fallback system
 // in place.
-CapyLibrary* capy_domain_library_open(CapyDomain* cd, const std::string& libName);
+//
+// If a library is intended to be a Core Library, you must call this function
+// before capy_reload_libraries_into_domain, otherwise it's not going to work.
+//
+// Marking isCore as true will push it's complete file name into a list,
+// the list can be pulled from capy_get_core_libraries_from_domain,
+// which returns a vector of strings.
+CapyLibrary* capy_domain_library_open(CapyDomain* cd, const std::string& libName, bool isCore);
+
+// This function lets you retrieve a vector of library names that were marked as core,
+// this is useful for making a runtime that needs base classes, I.e. MonoBehavior (for C#),
+// to be linked across multiple libraries.
+std::vector<std::string> capy_get_core_libraries_from_domain(const std::string& domainName);
 
 // This function is used to get the image of a given library
 CapyImage* capy_library_get_image(CapyLibrary* cl);

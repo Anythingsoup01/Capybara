@@ -42,9 +42,11 @@ int main(int argc, char** argv)
 
     CapyDomain* d = capy_init_domain("Expansion");
 
+    capy_domain_library_open(d, "libbase-class.so", true);
+
     capy_reload_libraries_into_domain(d);
 
-    CapyLibrary* l = capy_domain_library_open(d, "libtest-lib.so");
+    CapyLibrary* l = capy_domain_library_open(d, "libtest-lib.so", false);
 
     CapyImage* i = capy_library_get_image(l);
 
@@ -60,6 +62,14 @@ int main(int argc, char** argv)
     cw.InvokeMethod(pm, {cm, "This is my message!"});
 
     cw.InvokeMethod(pam, {cm});
+
+
+    auto coreLibs = capy_get_core_libraries_from_domain("Expansion");
+
+    for (auto& libName : coreLibs)
+    {
+        std::cout << libName << "\n";
+    }
 
     std::cout << capy_dump_domain("Expansion");
 

@@ -1,21 +1,16 @@
 #pragma once
+#include "base-class.h"
 
-
-namespace DLL 
+namespace DLL
 {
-    class Test 
+    class Test : public Base
     {
     public:
-        void Print(const char* msg);
-        void PrintAgain();
+        void Print(const char* msg) override;
+        void PrintAgain() override;
 
         static Test* Create();
     private:
         const char* m_PreviousMessage;
-    };
-
-    class IgnoreThis {
-    public:
-        void CantSeeMe();
     };
 }

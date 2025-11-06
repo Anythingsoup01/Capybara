@@ -3,10 +3,8 @@
 #include "Capybara.h"
 #include "Utility.h"
 
-#include <libelfin/dwarf/data.hh>
 #include <libelfin/elf/elf++.hh>
 #include <libelfin/dwarf/dwarf++.hh>
-#include <vector>
 
 static Storage s_Storage;
 
@@ -363,12 +361,12 @@ void capy_reload_libraries_into_domain(CapyDomain* cd)
     {
         if (entry.is_regular_file() && entry.path().extension() == ".so")
         {
-            capy_domain_library_open(cd, entry.path().filename());
+            capy_domain_library_open(cd, entry.path().filename(), false);
         }
     }
 }
 
-CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName)
+CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName, bool isCore)
 {
     std::filesystem::path libPath = s_Storage.SearchPath;
     libPath.append(libName);
@@ -384,6 +382,7 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName)
         }
         libPath = std::filesystem::path(libName);
     }
+
 
 
     if (d->Libraries.find(libPath.filename().string()) != d->Libraries.end())
@@ -508,12 +507,30 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName)
 
     std::unique_ptr<CapyLibrary> library = std::make_unique<CapyLibrary>(image);
     library->SymbolInstance = std::move(instance);
+    library->IsCore = isCore;
+
+    if (isCore)
+        d->CoreLibraries.push_back(libPath.filename().c_str());
 
     d->Libraries[libPath.filename().c_str()] = std::move(library);
 
     return d->Libraries.at(libPath.filename().string()).get();
 
 
+}
+
+std::vector<std::string> capy_get_core_libraries_from_domain(const std::string &domainName)
+{
+    auto it = s_Storage.Domains.find(domainName);
+    if (it == s_Storage.Domains.end())
+    {
+        std::cerr << "ERROR: domain '" << domainName << "' doesn't exists!\n";
+        return {};
+    }
+
+    CapyDomain* domain = it->second.get();
+
+    return domain->CoreLibraries;
 }
 
 CapyImage* capy_library_get_image(CapyLibrary* l)

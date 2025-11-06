@@ -67,7 +67,30 @@ Project = {
     },
 
     flags = {
-        "-gdwarf-2"
+        "-gdwarf-2",
+    },
+
+    links = {
+        "base-class",
     }
 }
 
+Project = {
+    name = "base-class",
+    kind = "SharedLib",
+    language = "C++",
+    dialect = "20",
+
+    files = {
+        "./test/dll/base-class.cpp",
+        "./test/dll/base-class.h",
+    },
+
+    includedirs = {
+        "test/dll",
+    },
+
+    flags = {
+        "-gdwarf-2",
+    }
+}

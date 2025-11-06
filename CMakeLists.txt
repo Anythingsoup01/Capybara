@@ -55,7 +55,27 @@ target_include_directories(test-lib PRIVATE
     "test/dll"
 )
 
+target_link_libraries(test-lib
+    base-class
+)
+
 target_compile_options(test-lib PRIVATE
+    -gdwarf-2
+    -O0
+)
+
+set(SRCS
+    "./test/dll/base-class.cpp"
+    "./test/dll/base-class.h"
+)
+add_library(base-class SHARED ${SRCS})
+set_property(TARGET base-class PROPERTY CXX_STANDARD 20)
+
+target_include_directories(base-class PRIVATE
+    "test/dll"
+)
+
+target_compile_options(base-class PRIVATE
     -gdwarf-2
 )
 

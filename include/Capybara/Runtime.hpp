@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 struct Symbol {
     std::string Namespace;
     std::string ClassName;
@@ -70,7 +71,9 @@ struct CapyImage {
 
 struct CapyLibrary {
     std::unique_ptr<CapyImage> MainImage;
+    std::filesystem::path LibPath;
     void* SymbolInstance;
+    bool IsCore;
 
     CapyLibrary(CapyImage* mainImage)
         : MainImage(std::move(mainImage)) {}
@@ -78,7 +81,7 @@ struct CapyLibrary {
 
 struct CapyDomain {
     std::unordered_map<std::string, std::unique_ptr<CapyLibrary>> Libraries;
-
+    std::vector<std::string> CoreLibraries;
 };
 
 struct Storage {
