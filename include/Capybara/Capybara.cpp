@@ -7,11 +7,59 @@
 
 static Storage s_Storage;
 
+static void remove_core_classes(CapyDomain* cd)
+{
+    std::vector<std::string> coreClasses;
+    for (auto& [name, lib] : cd->Libraries)
+    {
+        if (!lib->IsCore)
+            continue;
+
+        CapyImage* image = lib->MainImage.get();
+        for (auto& [name, klass] : image->Classes)
+        {
+            if (name.empty())
+                continue;
+            coreClasses.push_back(name);
+        }
+    }
+
+    for (auto& [name, lib] : cd->Libraries)
+    {
+        if (lib->IsCore)
+            continue;
+
+        CapyImage* image = lib->MainImage.get();
+        std::unordered_map<std::string, std::unique_ptr<CapyClass>> goodClasses;
+        for (auto& [name, klass] : image->Classes)
+        {
+            bool found = false;
+            for (auto& coreClass : coreClasses)
+            {
+                if (strncmp(name.c_str(), coreClass.c_str(), coreClass.length()) == 0)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                goodClasses[name] = std::move(klass);
+            }
+        }
+
+        image->Classes = std::move(goodClasses);
+
+    }
+}
+
 static void update_symbol_namespaces(std::vector<Symbol>& symbols)
 {
     for (auto& sym : symbols)
     {
         std::string& NameSpace = sym.Namespace;
+        //std::cout << "NAMESPACE: " << NameSpace << "::" << sym.Name << "\n";
         for (auto& knownName : s_Storage.KnownClassNames)
         {
             size_t foundName = NameSpace.rfind(knownName);
@@ -45,18 +93,23 @@ static void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& 
 
     if (is_namespace && !name.empty())
     {
+
         for (auto& ignoredNamespace : s_Storage.IgnoredNamespaces)
         {
             if (strncmp(name.c_str(), ignoredNamespace.c_str(), ignoredNamespace.length()) == 0)
+            {
                 return;
+            }
         }
     }
-    if (is_classname && !name.empty())
+    if ((is_classname || is_structure) && !name.empty())
     {
         for (auto& ignoredClassName : s_Storage.IgnoredClassNames)
         {
             if (strncmp(name.c_str(), ignoredClassName.c_str(), ignoredClassName.length()) == 0)
+            {
                 return;
+            }
         }
     }
 
@@ -70,6 +123,11 @@ static void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& 
     if (d.tag == dwarf::DW_TAG::subprogram) {
 
         if (scope_stack.empty() && s_Storage.IgnoreEmptyNamespaces)
+            return;
+
+        // This removes any mangled symbols, not sure why
+        // there are any in -gdwarf-4 but there is :(
+        if (strncmp(name.c_str(), "_ZN", 3) == 0)
             return;
 
 
@@ -94,6 +152,7 @@ static void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& 
         sym.ReturnType = get_return_type(d);
         sym.IsVariable = false;
         sym.IsClassInstance = false;
+        sym.Offset = 0;
 
 
         for (auto& child : d)
@@ -142,6 +201,63 @@ static void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& 
             }
         }
 
+        outSymbols.push_back(sym);
+
+    }
+
+    if (d.tag == dwarf::DW_TAG::member)
+    {
+        if (scope_stack.empty() && s_Storage.IgnoreEmptyNamespaces)
+            return;
+
+        std::vector<std::string> full_scope(scope_stack);
+
+        std::string qualified_name;
+        for (size_t i = 0; i < full_scope.size(); ++i) {
+            if (i > 0) qualified_name += "::";
+            qualified_name += full_scope[i];
+        }
+
+        uint64_t offset = 0;
+
+        if (d.has(dwarf::DW_AT::data_member_location)) 
+        {
+            const auto& attr = d[dwarf::DW_AT::data_member_location];
+
+            switch (attr.get_form()) 
+            {
+                case dwarf::DW_FORM::data1:
+                case dwarf::DW_FORM::data2:
+                case dwarf::DW_FORM::data4:
+                case dwarf::DW_FORM::data8:
+                case dwarf::DW_FORM::udata:
+                case dwarf::DW_FORM::sdata:
+                    offset = attr.as_uconstant();
+                    break;
+
+                case dwarf::DW_FORM::exprloc:
+                    std::cout << "VARIABLE NEEDS TO BE EVALUATED!\n";
+                    break;
+                default:
+                    break;
+            }
+
+        }
+
+        // Intentionally leaving the class name empty
+        // If we get an instance of Class* this,
+        // then we will convert it to the ClassName.
+        Symbol sym;
+        std::string name = get_short_name(d);
+        if (strs_n_equal(name, {"<anon>"}))
+            return;
+
+        sym.Name = name;
+        sym.Namespace = qualified_name;
+        sym.ReturnType = get_return_type(d);
+        sym.IsVariable = true;
+        sym.IsClassInstance = true;
+        sym.Offset = offset;
 
         outSymbols.push_back(sym);
 
@@ -170,6 +286,8 @@ static void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& 
         sym.Namespace = qualified_name;
         sym.ReturnType = get_return_type(d);
         sym.IsVariable = true;
+        sym.IsClassInstance = false;
+        sym.Offset = 0;
 
         outSymbols.push_back(sym);
 
@@ -236,6 +354,12 @@ static std::vector<Symbol> process_library(const elf::elf& ef, const std::vector
         }
     }
 
+    for (auto& sym : symbols)
+    {
+        if (sym.Offset > 0 || (sym.IsClassInstance && sym.IsVariable))
+            tmp.push_back(sym);
+    }
+
     return tmp;
 }
 
@@ -243,6 +367,7 @@ void capy_init()
 {
     s_Storage = Storage();
     s_Storage.IgnoredNamespaces = { "std", "__gnu_", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" };
+    s_Storage.IgnoredClassNames = { "std", "__gnu_", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_", "__pthread", "timespec", "lconv" };
     s_Storage.IgnoreEmptyNamespaces = false;
 }
 
@@ -263,10 +388,7 @@ void capy_set_libraries_path(const std::filesystem::path &libPath)
 void capy_set_ignored_namespace(const std::vector<std::string>& ignoredNamespace)
 {
     for (auto& nameSpace : ignoredNamespace)
-    {
         s_Storage.IgnoredNamespaces.push_back(nameSpace);
-        std::cout << nameSpace << "\n";
-    }
 }
 
 void capy_set_ignore_empty_namespace(bool active)
@@ -297,8 +419,13 @@ CapyDomain* capy_init_domain(const std::string& name)
 void capy_unload_domain(const std::string& domainName)
 {
     auto it = s_Storage.Domains.find(domainName);
-    if (it != s_Storage.Domains.end())
-        s_Storage.Domains.erase(it);
+    if (it == s_Storage.Domains.end())
+    {
+        std::cout << "Domain: " << domainName << " doesn't exist!\n";
+        return;
+    }
+
+    s_Storage.Domains.erase(it);
 }
 
 std::string capy_dump_domain(const std::string& domainName)
@@ -397,7 +524,7 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
     {
         std::cerr << "ERROR: " << e.what() << "\n";
     }
-    CapyImage* image = new CapyImage;
+    auto image = std::make_unique<CapyImage>();
     std::vector<Symbol> symbols;
 
     for (auto &cu : dw.compilation_units())
@@ -409,14 +536,12 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
 
     symbols = process_library(ef, symbols);
 
-    void* instance = dlmopen(LM_ID_NEWLM, libPath.c_str(), RTLD_LAZY | RTLD_LOCAL);
+    void* instance = dlopen(libPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (!instance)
     {
-        std::cerr << "ERROR: Failed to open file: " << libPath.generic_string() << "\n";
+        std::cerr << "ERROR: " << dlerror() << "\n";
         return nullptr;
     }
-
-
 
     std::unordered_map<std::string, std::unique_ptr<CapyClass>> classes;
 
@@ -426,8 +551,11 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
         void* handle = dlsym(instance, sym.Signature.c_str());
         if (!handle)
         {
-            std::cerr << "ERROR: symbol " << sym.Signature << " failed\n";
-            continue;
+            if (sym.ClassName.empty())
+            {
+                std::cerr << "ERROR: " << dlerror() << "\n";
+                continue;
+            }
         }
 
         std::string fullName;
@@ -449,6 +577,8 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
                     std::unique_ptr<CapyField> field = std::make_unique<CapyField>();
                     field->SymHandle = handle;
                     field->FieldType = string_to_value_type(sym.ReturnType);
+                    field->FieldTypeString = sym.ReturnType;
+                    field->Offset = sym.Offset;
                     Klass->VTable->Fields[sym.Name] = std::move(field);
                 }
                 else
@@ -485,6 +615,8 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
                 std::unique_ptr<CapyField> field = std::make_unique<CapyField>();
                 field->SymHandle = handle;
                 field->FieldType = string_to_value_type(sym.ReturnType);
+                field->FieldTypeString = sym.ReturnType;
+                field->Offset = sym.Offset;
                 classes[fullName]->VTable->Fields[sym.Name] = std::move(field);
             }
             else
@@ -509,7 +641,7 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
 
     image->Classes = std::move(classes);
 
-    std::unique_ptr<CapyLibrary> library = std::make_unique<CapyLibrary>(image);
+    std::unique_ptr<CapyLibrary> library = std::make_unique<CapyLibrary>(std::move(image));
     library->SymbolInstance = std::move(instance);
     library->IsCore = isCore;
 
@@ -517,6 +649,8 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
         d->CoreLibraries.push_back(libPath.filename().c_str());
 
     d->Libraries[libPath.filename().c_str()] = std::move(library);
+
+    remove_core_classes(d);
 
     return d->Libraries.at(libPath.filename().string()).get();
 
@@ -566,26 +700,58 @@ CapyField* capy_field_from_class(CapyClass* c, const std::string& fieldName)
     return c->VTable->Fields[fieldName].get();
 }
 
-void capy_field_data_get_from_class(CapyClass* cc, const std::string& fieldName, void* value)
+void capy_field_data_get_from_class(void* instance, CapyClass* cc, const std::string& fieldName, void* value)
 {
     CapyField* f = capy_field_from_class(cc, fieldName);
-    memcpy(value, f->SymHandle, type_size(f->FieldType));
+    if (instance)
+    {
+        void* offsetVoidPTR = static_cast<void*>(static_cast<char*>(instance) + f->Offset);
+        memcpy(value, offsetVoidPTR, type_size(f->FieldType));
+    }
+    else
+    {
+        memcpy(value, f->SymHandle, type_size(f->FieldType));
+    }
 }
 
-void capy_field_data_get_from_field(CapyField* cf, void* value)
+void capy_field_data_get_from_field(void* instance, CapyField* cf, void* value)
 {
-    memcpy(value, cf->SymHandle, type_size(cf->FieldType));
+    if (instance)
+    {
+        void* offsetVoidPTR = static_cast<void*>(static_cast<char*>(instance) + cf->Offset);
+        memcpy(value, offsetVoidPTR, type_size(cf->FieldType));
+    }
+    else
+    {
+        memcpy(value, cf->SymHandle, type_size(cf->FieldType));
+    }
 }
 
-void capy_field_data_set_from_class(CapyClass* cf, const std::string& fieldName, void* value)
+void capy_field_data_set_from_class(void* instance, CapyClass* cc, const std::string& fieldName, void* value)
 {
-    CapyField* f = capy_field_from_class(cf, fieldName);
-    memcpy(f->SymHandle, value, type_size(f->FieldType));
+    CapyField* f = capy_field_from_class(cc, fieldName);
+    if (instance)
+    {
+        void* offsetVoidPTR = static_cast<void*>(static_cast<char*>(instance) + f->Offset);
+        memcpy(offsetVoidPTR, value, type_size(f->FieldType));
+    }
+    else
+    {
+        memcpy(f->SymHandle, value, type_size(f->FieldType));
+    }
 }
 
-void capy_field_data_set_from_field(CapyField* cf, void* value)
+void capy_field_data_set_from_field(void* instance, CapyField* cf, void* value)
 {
-    memcpy(cf->SymHandle, value, type_size(cf->FieldType));
+    if (instance)
+    {
+        void* offsetVoidPTR = static_cast<void*>(static_cast<char*>(instance) + cf->Offset);
+        memcpy(offsetVoidPTR, value, type_size(cf->FieldType));
+    }
+    else
+    {
+        memcpy(cf->SymHandle, value, type_size(cf->FieldType));
+    }
 }
 
 void* capy_function_call_from_method(CapyMethod* method, const std::vector<RuntimeValue>& values)

@@ -10,6 +10,7 @@ struct Symbol {
     std::vector<std::string> ParameterTypes;
     bool IsVariable;
     bool IsClassInstance;
+    unsigned int Offset;
 };
 
 enum class ValueType {
@@ -44,6 +45,8 @@ struct RuntimeValue {
 struct CapyField {
     void* SymHandle;
     ValueType FieldType;
+    unsigned int Offset;
+    std::string FieldTypeString;
 };
 
 struct CapyMethod {
@@ -75,8 +78,14 @@ struct CapyLibrary {
     void* SymbolInstance;
     bool IsCore;
 
-    CapyLibrary(CapyImage* mainImage)
-        : MainImage(std::move(mainImage)) {}
+    CapyLibrary(std::unique_ptr<CapyImage> image)
+        : MainImage(std::move(image)) {}
+
+    ~CapyLibrary()
+    {
+        if (SymbolInstance)
+            dlclose(SymbolInstance);
+    }
 };
 
 struct CapyDomain {
