@@ -11,6 +11,13 @@
 #include <unordered_map>
 #include <memory>
 #include <filesystem>
+#include <algorithm>
+
+
+#include <sys/mman.h>
+#include <link.h>
+#include <cerrno>
+#include <cstring>
 
 #include <libelfin/elf/elf++.hh>
 #include <libelfin/dwarf/dwarf++.hh>

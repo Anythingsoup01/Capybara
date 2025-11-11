@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Runtime.hpp"
+#include <cstdint>
 
 // This function is meant to demaingle c++ mangled names
 std::string demangle_symbol_name(const char* name);
@@ -37,4 +38,5 @@ std::string resolve_type(const dwarf::die& type_die);
 
 // This function will give the return type name of a give dwarf::die
 std::string get_return_type(const dwarf::die& die);
+
 

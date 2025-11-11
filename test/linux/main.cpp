@@ -31,6 +31,11 @@ private:
     CapyClass* m_CapyClass;
 };
 
+static int Internal_Add(int a, int b)
+{
+    return a + b;
+}
+
 
 int main(int argc, char** argv) 
 {
@@ -42,9 +47,12 @@ int main(int argc, char** argv)
 
     CapyDomain* d = capy_init_domain("Expansion");
 
+
     capy_domain_library_open(d, "libbase-class.so", true);
 
     capy_reload_libraries_into_domain(d);
+
+    capy_add_internal_call("Internal_Add", (void*)&Internal_Add);
 
     CapyLibrary* l = capy_domain_library_open(d, "libtest-lib.so", false);
 
@@ -56,6 +64,7 @@ int main(int argc, char** argv)
     CapyMethod* cm = cw.GetMethod("Create");
     CapyMethod* pm = cw.GetMethod("Print");
     CapyMethod* pam = cw.GetMethod("PrintAgain");
+    CapyMethod* am = cw.GetMethod("Add");
 
     void* valPtr = cw.InvokeMethod(cm, {});
 
@@ -63,6 +72,7 @@ int main(int argc, char** argv)
 
     cw.InvokeMethod(pam, {cm});
 
+    cw.InvokeMethod(am, {cm, 10, 15});
 
     auto coreLibs = capy_get_core_libraries_from_domain("Expansion");
 

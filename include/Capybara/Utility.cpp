@@ -161,5 +161,3 @@ std::string get_return_type(const dwarf::die& die)
     return "void*";
 }
 
-
-

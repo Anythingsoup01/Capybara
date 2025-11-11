@@ -1,6 +1,9 @@
 #include "test-lib.h"
+#include "base-class.h"
 #include <stdio.h>
 #include <iostream>
+
+#include <dlfcn.h>
 
 
 namespace DLL
@@ -31,6 +34,12 @@ namespace DLL
     void Test::PrintAgain()
     {
         printf( "Reprinting : %s\n", m_PreviousMessage);
+    }
+
+    void Test::Add(int a, int b)
+    {
+        if (Internal_Add)
+            printf("%d + %d = %d\n", a, b, Internal_Add(a, b));
     }
 
     Test* Test::Create()

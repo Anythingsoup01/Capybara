@@ -29,6 +29,10 @@ Project = {
         "dwarf++",
         "ffi"
     },
+    flags = {
+        "-rdynamic",
+    },
+
 }
 
 Project = {
@@ -48,6 +52,9 @@ Project = {
 
     links = {
         "Capybara"
+    },
+    flags = {
+        "-rdynamic",
     },
 }
 

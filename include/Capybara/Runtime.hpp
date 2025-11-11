@@ -8,9 +8,9 @@ struct Symbol {
     std::string Signature;
     std::string ReturnType;
     std::vector<std::string> ParameterTypes;
-    bool IsVariable;
-    bool IsClassInstance;
-    unsigned int Offset;
+    bool IsVariable = false;
+    bool IsClassInstance = false;
+    int Offset = -1;
 };
 
 enum class ValueType {
@@ -53,6 +53,7 @@ struct CapyMethod {
     void* SymHandle;
     ValueType ReturnType;
     std::vector<ValueType> Parameters;
+    bool IsUnresolved;
 };
 
 struct CapyVTable {
@@ -78,6 +79,10 @@ struct CapyLibrary {
     void* SymbolInstance;
     bool IsCore;
 
+
+    // Map of relocations
+    std::unordered_map<uintptr_t, uintptr_t> OriginalRelocs;
+
     CapyLibrary(std::unique_ptr<CapyImage> image)
         : MainImage(std::move(image)) {}
 
@@ -98,6 +103,7 @@ struct Storage {
     std::vector<std::string> KnownClassNames;
     std::vector<std::string> IgnoredNamespaces;
     std::vector<std::string> IgnoredClassNames;
+    std::unordered_map<std::string, void*> InternalCalls;
     bool IgnoreEmptyNamespaces;
     std::filesystem::path SearchPath;
 };

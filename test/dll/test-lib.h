@@ -1,6 +1,8 @@
 #pragma once
 #include "base-class.h"
 
+
+
 namespace DLL
 {
     class Test : public Base
@@ -8,6 +10,8 @@ namespace DLL
     public:
         void Print(const char* msg) override;
         void PrintAgain() override;
+
+        void Add(int a, int b);
 
         static Test* Create();
     private:

@@ -2,7 +2,9 @@
 #include "Capybara.h"
 #include "Utility.h"
 
+
 #include <libelfin/elf/elf++.hh>
+#include <elf.h>
 #include <libelfin/dwarf/dwarf++.hh>
 
 static Storage s_Storage;
@@ -325,39 +327,40 @@ static std::vector<Symbol> process_library(const elf::elf& ef, const std::vector
 
     std::vector<Symbol> tmp;
     
-    for (auto& [demangled, mangled] : symbolNames)
-    {
-        for (auto& sym : symbols)
-        {
-            std::string fullName;
-            if (!sym.Namespace.empty())
-                fullName += sym.Namespace + "::";
-            if (!sym.ClassName.empty())
-                fullName += sym.ClassName + "::"; 
-
-            fullName += sym.Name;
-
-            if (fullName.length() != demangled.length() && fullName.length() != demangled.length() - 2)
-            {
-                continue;
-            }
-
-
-            
-            if (strncmp(fullName.c_str(), demangled.c_str(), fullName.length()) == 0)
-            {
-                Symbol adjustedSym = sym;
-                adjustedSym.Signature = mangled;
-                tmp.push_back(adjustedSym);
-                break;
-            }
-        }
-    }
-
     for (auto& sym : symbols)
     {
-        if (sym.Offset > 0 || (sym.IsClassInstance && sym.IsVariable))
+        std::string fullName;
+        if (!sym.Namespace.empty())
+            fullName += sym.Namespace + "::";
+        if (!sym.ClassName.empty())
+            fullName += sym.ClassName + "::"; 
+
+        fullName += sym.Name;
+
+        auto it = symbolNames.find(fullName);
+        if (it != symbolNames.end())
+        {
+            Symbol resolved = sym;
+            resolved.Signature = it->second;
+            tmp.push_back(resolved);
+        }
+        else
+        {
+            Symbol unresolved = sym;
+            unresolved.Signature = ""; // no symbol in ELF
+            tmp.push_back(unresolved); // keep it anyway
+        }
+
+    }
+
+
+    for (auto sym : symbols)
+    {
+        if (sym.Offset >= 0 && (sym.IsClassInstance && sym.IsVariable))
+        {
             tmp.push_back(sym);
+            continue;
+        }
     }
 
     return tmp;
@@ -426,6 +429,7 @@ void capy_unload_domain(const std::string& domainName)
     }
 
     s_Storage.Domains.erase(it);
+    s_Storage.InternalCalls.clear();
 }
 
 std::string capy_dump_domain(const std::string& domainName)
@@ -536,7 +540,7 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
 
     symbols = process_library(ef, symbols);
 
-    void* instance = dlopen(libPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    void* instance = dlopen(libPath.c_str(), RTLD_LAZY | RTLD_GLOBAL);
     if (!instance)
     {
         std::cerr << "ERROR: " << dlerror() << "\n";
@@ -547,16 +551,30 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
 
     for (auto& sym : symbols)
     {
+        void* handle = nullptr;
+        bool isUnresolved = false;
 
-        void* handle = dlsym(instance, sym.Signature.c_str());
-        if (!handle)
+        if (!sym.Signature.empty())
         {
-            if (sym.ClassName.empty())
-            {
-                std::cerr << "ERROR: " << dlerror() << "\n";
-                continue;
-            }
+            handle = dlsym(instance, sym.Signature.c_str());
+            if (!handle)
+                isUnresolved = true;
         }
+        else
+        {
+            isUnresolved = true;
+        }
+
+        // Try internal calls first (highest priority)
+        if (s_Storage.InternalCalls.contains(sym.Name))
+        {
+            handle = s_Storage.InternalCalls.at(sym.Name);
+            isUnresolved = false;
+        }
+
+
+        if (!s_Storage.InternalCalls.contains(sym.Name) && !handle)
+            continue;
 
         std::string fullName;
         if (!sym.Namespace.empty())
@@ -565,80 +583,55 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
             fullName += sym.ClassName;
 
 
-        bool found = false;
-
-        for (auto& [fullNameSpace, Klass] : classes)
+        // Ensure class exists or create new
+        CapyClass* klass = nullptr;
+        auto it = classes.find(fullName);
+        if (it == classes.end())
         {
-            if (str_n_equal(fullNameSpace, fullName))
-            {
-                Klass->Symbols[sym.Name] = sym;
-                if (sym.IsVariable)
-                {
-                    std::unique_ptr<CapyField> field = std::make_unique<CapyField>();
-                    field->SymHandle = handle;
-                    field->FieldType = string_to_value_type(sym.ReturnType);
-                    field->FieldTypeString = sym.ReturnType;
-                    field->Offset = sym.Offset;
-                    Klass->VTable->Fields[sym.Name] = std::move(field);
-                }
-                else
-                {
-                    std::unique_ptr<CapyMethod> method = std::make_unique<CapyMethod>();
-                    method->SymHandle = handle;
-                    method->ReturnType = string_to_value_type(sym.ReturnType);
-                    if (sym.IsClassInstance)
-                        method->Parameters.push_back(ValueType::POINTER);
-
-                    for (auto& param : sym.ParameterTypes)
-                    {
-                        ValueType type = string_to_value_type(param);
-                        if (type != ValueType::VOID)
-                            method->Parameters.push_back(type);
-                    }
-                    Klass->VTable->Methods[sym.Name] = std::move(method);
-                }
-                found = true;
-            }
+            auto newKlass = std::make_unique<CapyClass>();
+            newKlass->NameSpace = sym.Namespace;
+            newKlass->ClassName = sym.ClassName;
+            newKlass->VTable = std::make_unique<CapyVTable>();
+            klass = newKlass.get();
+            classes[fullName] = std::move(newKlass);
+        }
+        else
+        {
+            klass = it->second.get();
         }
 
-        if (!found)
+        // Store symbol metadata
+        klass->Symbols[sym.Name] = sym;
+
+        if (sym.IsVariable)
         {
-            std::unique_ptr<CapyClass> klass = std::make_unique<CapyClass>();
-            klass->NameSpace = sym.Namespace;
-            klass->ClassName = sym.ClassName;
-            klass->Symbols[sym.Name] = sym;
-            classes[fullName] = std::move(klass);
-            std::unique_ptr<CapyVTable> vtable = std::make_unique<CapyVTable>();
-            classes[fullName]->VTable = std::move(vtable);
-            if (sym.IsVariable)
-            {
-                std::unique_ptr<CapyField> field = std::make_unique<CapyField>();
-                field->SymHandle = handle;
-                field->FieldType = string_to_value_type(sym.ReturnType);
-                field->FieldTypeString = sym.ReturnType;
-                field->Offset = sym.Offset;
-                classes[fullName]->VTable->Fields[sym.Name] = std::move(field);
-            }
-            else
-            {
-                std::unique_ptr<CapyMethod> method = std::make_unique<CapyMethod>();
-                method->SymHandle = handle;
-                method->ReturnType = string_to_value_type(sym.ReturnType);
-                if (sym.IsClassInstance)
-                    method->Parameters.push_back(ValueType::POINTER);
+            auto field = std::make_unique<CapyField>();
+            field->SymHandle = handle;
+            field->FieldType = string_to_value_type(sym.ReturnType);
+            field->FieldTypeString = sym.ReturnType;
+            field->Offset = sym.Offset;
+            klass->VTable->Fields[sym.Name] = std::move(field);
+        }
+        else
+        {
+            auto method = std::make_unique<CapyMethod>();
+            method->SymHandle = handle;
+            method->ReturnType = string_to_value_type(sym.ReturnType);
+            method->IsUnresolved = isUnresolved;
 
-                for (auto& param : sym.ParameterTypes)
-                {
-                    ValueType type = string_to_value_type(param);
-                    if (type != ValueType::VOID)
-                        method->Parameters.push_back(type);
-                }
-                classes[fullName]->VTable->Methods[sym.Name] = std::move(method);
+            if (sym.IsClassInstance)
+                method->Parameters.push_back(ValueType::POINTER);
+
+            for (auto& param : sym.ParameterTypes)
+            {
+                ValueType type = string_to_value_type(param);
+                if (type != ValueType::VOID)
+                    method->Parameters.push_back(type);
             }
 
+            klass->VTable->Methods[sym.Name] = std::move(method);
         }
     }
-
     image->Classes = std::move(classes);
 
     std::unique_ptr<CapyLibrary> library = std::make_unique<CapyLibrary>(std::move(image));
@@ -648,13 +641,11 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
     if (isCore)
         d->CoreLibraries.push_back(libPath.filename().c_str());
 
-    d->Libraries[libPath.filename().c_str()] = std::move(library);
 
     remove_core_classes(d);
+    d->Libraries[libPath.filename().c_str()] = std::move(library);
 
     return d->Libraries.at(libPath.filename().string()).get();
-
-
 }
 
 std::vector<std::string> capy_get_core_libraries_from_domain(const std::string &domainName)
@@ -798,4 +789,35 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
         case ValueType::VOID: return nullptr;
     }
     return nullptr;
+}
+
+void capy_add_internal_call(const std::string& name, void* functionSymbol)
+{
+    if (s_Storage.InternalCalls.contains(name)) return;
+
+    s_Storage.InternalCalls[name] = functionSymbol;
+
+    
+    for (auto& [_, domain] : s_Storage.Domains)
+    {
+        for (auto& [libName, library] : domain->Libraries)
+        {
+            if (!library->SymbolInstance) continue;
+
+            CapyImage* img = library->MainImage.get();
+            for (auto& [clsName, cls] : img->Classes)
+            {
+                for (auto& [symName, sym] : cls->Symbols)
+                {
+                    if (symName == name)
+                    {
+                        // Directly patch the pointer in the plugin
+                        void** addr = reinterpret_cast<void**>(cls->VTable->Fields[symName]->SymHandle);
+                        if (addr)
+                            *addr = functionSymbol;
+                    }
+                }
+            }
+        }
+    }
 }

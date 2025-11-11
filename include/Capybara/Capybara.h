@@ -98,3 +98,6 @@ void capy_field_data_set_from_field(void* instance, CapyField* cf, void* value);
 // This function is used to call a given method with given values
 void* capy_function_call_from_method(CapyMethod* cm, const std::vector<RuntimeValue>& values);
 
+// This function let's you add internal functions, this should be handled after
+// adding / reloading all libraries to ensure everything gets the correct symbol
+void capy_add_internal_call(const std::string& name, void* functionSymbol);
