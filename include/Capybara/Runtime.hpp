@@ -15,21 +15,32 @@ struct Symbol {
 
 enum class ValueType {
     VOID = 0,
-    INT32,
-    FLOAT,
+    INT16, INT32, INT64,
+    UINT16, UINT32, UINT64,
+    FLOAT, DOUBLE,
     POINTER,
 };
 
 struct RuntimeValue {
     ValueType Type;
     union {
-        int i;
+        int16_t i16;
+        int32_t i32;
+        int64_t i64;
+        uint16_t ui16;
+        uint32_t ui32;
+        uint64_t ui64;
         float f;
         void* p;
     };
 
     RuntimeValue() : Type(ValueType::VOID), p(nullptr) {}
-    RuntimeValue(int val) : Type(ValueType::INT32), i(val) {}
+    RuntimeValue(int16_t val) : Type(ValueType::INT16), i16(val) {}
+    RuntimeValue(int32_t val) : Type(ValueType::INT32), i32(val) {}
+    RuntimeValue(int64_t val) : Type(ValueType::INT64), i64(val) {}
+    RuntimeValue(uint16_t val) : Type(ValueType::UINT16), ui16(val) {}
+    RuntimeValue(uint32_t val) : Type(ValueType::UINT32), ui32(val) {}
+    RuntimeValue(uint64_t val) : Type(ValueType::UINT64), ui64(val) {}
     RuntimeValue(float val) : Type(ValueType::FLOAT), f(val) {}
     RuntimeValue(const char* val) : Type(ValueType::POINTER), p((void*)val) {}
     RuntimeValue(void* val) : Type(ValueType::POINTER), p(val) {}
@@ -46,6 +57,7 @@ struct CapyField {
     void* SymHandle;
     ValueType FieldType;
     unsigned int Offset;
+    bool ClassMember;
     std::string FieldTypeString;
 };
 

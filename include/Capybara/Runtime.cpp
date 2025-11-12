@@ -2,12 +2,41 @@
 #include "Runtime.hpp"
 
 template<>
-int RuntimeValue::As<int>() const
+int16_t RuntimeValue::As<int16_t>() const
+{
+    if (Type != ValueType::INT16) throw std::runtime_error("Type mismatch for int");
+    return i16;
+}
+template<>
+int32_t RuntimeValue::As<int32_t>() const
 {
     if (Type != ValueType::INT32) throw std::runtime_error("Type mismatch for int");
-    return i;
+    return i32;
 }
-
+template<>
+int64_t RuntimeValue::As<int64_t>() const
+{
+    if (Type != ValueType::INT64) throw std::runtime_error("Type mismatch for int");
+    return i64;
+}
+template<>
+uint16_t RuntimeValue::As<uint16_t>() const
+{
+    if (Type != ValueType::UINT16) throw std::runtime_error("Type mismatch for int");
+    return ui16;
+}
+template<>
+uint32_t RuntimeValue::As<uint32_t>() const
+{
+    if (Type != ValueType::UINT32) throw std::runtime_error("Type mismatch for int");
+    return ui32;
+}
+template<>
+uint64_t RuntimeValue::As<uint64_t>() const
+{
+    if (Type != ValueType::UINT32) throw std::runtime_error("Type mismatch for int");
+    return ui64;
+}
 template<>
 float RuntimeValue::As<float>() const
 {

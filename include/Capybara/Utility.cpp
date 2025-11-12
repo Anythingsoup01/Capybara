@@ -1,4 +1,5 @@
 #include "cpypch.h"
+#include <cstdint>
 #include "Utility.h"
 
 std::string demangle_symbol_name(const char* name)
@@ -72,7 +73,12 @@ ffi_type* get_ffi_type_p(ValueType type)
 {
     switch (type)
     {
+        case ValueType::INT16: return &ffi_type_sint16;
         case ValueType::INT32: return &ffi_type_sint32;
+        case ValueType::INT64: return &ffi_type_sint64;
+        case ValueType::UINT16: return &ffi_type_uint16;
+        case ValueType::UINT32: return &ffi_type_uint32;
+        case ValueType::UINT64: return &ffi_type_uint64;
         case ValueType::FLOAT: return &ffi_type_float;
         case ValueType::POINTER: return &ffi_type_pointer;
         case ValueType::VOID: return &ffi_type_void;
@@ -85,9 +91,14 @@ void* get_ffi_arg_p(RuntimeValue& val)
 {
     switch (val.Type)
     {
-        case ValueType::INT32: return &val.i;
+        case ValueType::INT16: return &val.i16;
+        case ValueType::INT32: return &val.i32;
+        case ValueType::INT64: return &val.i64;
+        case ValueType::UINT16: return &val.ui16;
+        case ValueType::UINT32: return &val.ui32;
+        case ValueType::UINT64: return &val.ui64;
         case ValueType::FLOAT: return &val.f;
-        case ValueType::POINTER: return &val.p;
+        case ValueType::POINTER: return val.p;
         default: return nullptr;
     }
 }
@@ -96,8 +107,13 @@ size_t type_size(ValueType type)
 {
     switch (type)
     {
-        case ValueType::FLOAT: return sizeof(float);
+        case ValueType::INT16: return sizeof(int16_t);
         case ValueType::INT32: return sizeof(int32_t);
+        case ValueType::INT64: return sizeof(int64_t);
+        case ValueType::UINT16: return sizeof(uint16_t);
+        case ValueType::UINT32: return sizeof(uint32_t);
+        case ValueType::UINT64: return sizeof(uint64_t);
+        case ValueType::FLOAT: return sizeof(float);
         case ValueType::POINTER: return sizeof(void*);
         case ValueType::VOID: return 0;
     }

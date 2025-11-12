@@ -4,6 +4,8 @@
 #include "Utility.h"
 
 
+#include <cstring>
+#include <dlfcn.h>
 #include <libelfin/elf/elf++.hh>
 #include <elf.h>
 #include <libelfin/dwarf/dwarf++.hh>
@@ -326,6 +328,7 @@ static std::vector<Symbol> process_library(const elf::elf& ef, const std::vector
         }
     }
 
+
     std::vector<Symbol> tmp;
     
     for (auto& sym : symbols)
@@ -345,18 +348,40 @@ static std::vector<Symbol> process_library(const elf::elf& ef, const std::vector
             resolved.Signature = it->second;
             tmp.push_back(resolved);
         }
-        else
-        {
-            Symbol unresolved = sym;
-            unresolved.Signature = ""; // no symbol in ELF
-            tmp.push_back(unresolved); // keep it anyway
-        }
-
     }
+
 
 
     for (auto sym : symbols)
     {
+        bool ignored = false;
+        for (auto& ignoredClassName : s_Storage.IgnoredClassNames)
+        {
+            if (strncmp(sym.Name.c_str(), ignoredClassName.c_str(), ignoredClassName.length()) == 0)
+            {
+                ignored = true;
+                break;
+            }
+        }
+
+        if (ignored)
+            continue;
+
+        std::vector<std::string> ignoredNames = { "gp_offset", "fp_offset", "overflow_arg_area", "reg_save_area", "tm_", "_vptr." };
+
+        for (auto& ignoredName : ignoredNames)
+        {
+            if (strncmp(sym.Name.c_str(), ignoredName.c_str(), ignoredName.length()) == 0)
+            {
+                ignored = true;
+                break;
+            }
+
+        }
+
+        if (ignored)
+            continue;
+
         if (sym.Offset >= 0 && (sym.IsClassInstance && sym.IsVariable))
         {
             tmp.push_back(sym);
@@ -370,8 +395,8 @@ static std::vector<Symbol> process_library(const elf::elf& ef, const std::vector
 void capy_init()
 {
     s_Storage = Storage();
-    s_Storage.IgnoredNamespaces = { "std", "__gnu_", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" };
-    s_Storage.IgnoredClassNames = { "std", "__gnu_", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_", "__pthread", "timespec", "lconv" };
+    s_Storage.IgnoredNamespaces = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" };
+    s_Storage.IgnoredClassNames = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_", "__pthread", "timespec", "lconv", "_M_" };
     s_Storage.IgnoreEmptyNamespaces = false;
 }
 
@@ -553,28 +578,17 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
     for (auto& sym : symbols)
     {
         void* handle = nullptr;
-        bool isUnresolved = false;
-
         if (!sym.Signature.empty())
-        {
             handle = dlsym(instance, sym.Signature.c_str());
-            if (!handle)
-                isUnresolved = true;
-        }
-        else
-        {
-            isUnresolved = true;
-        }
+        
 
         // Try internal calls first (highest priority)
         if (s_Storage.InternalCalls.contains(sym.Name))
         {
-            handle = s_Storage.InternalCalls.at(sym.Name);
-            isUnresolved = false;
+            handle = s_Storage.InternalCalls[sym.Name];
         }
 
-
-        if (!s_Storage.InternalCalls.contains(sym.Name) && !handle)
+        if (!handle && (!sym.IsVariable && !sym.IsClassInstance))
             continue;
 
         std::string fullName;
@@ -611,6 +625,7 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
             field->FieldType = string_to_value_type(sym.ReturnType);
             field->FieldTypeString = sym.ReturnType;
             field->Offset = sym.Offset;
+            field->ClassMember = sym.IsVariable && sym.IsClassInstance;
             klass->VTable->Fields[sym.Name] = std::move(field);
         }
         else
@@ -618,7 +633,6 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
             auto method = std::make_unique<CapyMethod>();
             method->SymHandle = handle;
             method->ReturnType = string_to_value_type(sym.ReturnType);
-            method->IsUnresolved = isUnresolved;
 
             if (sym.IsClassInstance)
                 method->Parameters.push_back(ValueType::POINTER);
@@ -776,7 +790,12 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
 
 
     union {
-        int i;
+        int16_t i16;
+        int32_t i32;
+        int64_t i64;
+        uint16_t ui16;
+        uint32_t ui32;
+        uint64_t ui64;
         float f;
         void* p;
     } ret;
@@ -784,7 +803,12 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
     ffi_call(&cif, FFI_FN(method->SymHandle), &ret, ffiArgValues.data());
     switch(method->ReturnType)
     {
-        case ValueType::INT32: return new int(ret.i);
+        case ValueType::INT16: return new int(ret.i16);
+        case ValueType::INT32: return new int(ret.i32);
+        case ValueType::INT64: return new int(ret.i64);
+        case ValueType::UINT16: return new int(ret.ui16);
+        case ValueType::UINT32: return new int(ret.ui32);
+        case ValueType::UINT64: return new int(ret.ui64);
         case ValueType::FLOAT: return new float(ret.f);
         case ValueType::POINTER: return ret.p;
         case ValueType::VOID: return nullptr;
