@@ -1,3 +1,4 @@
+#include "Runtime.hpp"
 #include "cpypch.h"
 #include "Capybara.h"
 #include "Utility.h"
@@ -791,6 +792,17 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
     return nullptr;
 }
 
+template<> constexpr const char* capy_type_name<float>() { return "Float"; }
+template<> constexpr const char* capy_type_name<double>() { return "Double"; }
+template<> constexpr const char* capy_type_name<int16_t>() { return "Int16"; }
+template<> constexpr const char* capy_type_name<int32_t>() { return "Int32"; }
+template<> constexpr const char* capy_type_name<int64_t>() { return "Int64"; }
+template<> constexpr const char* capy_type_name<uint16_t>() { return "UInt16"; }
+template<> constexpr const char* capy_type_name<uint32_t>() { return "UInt32"; }
+template<> constexpr const char* capy_type_name<uint64_t>() { return "UInt64"; }
+
+
+
 void capy_add_internal_call(const std::string& name, void* functionSymbol)
 {
     if (s_Storage.InternalCalls.contains(name)) return;
@@ -800,12 +812,12 @@ void capy_add_internal_call(const std::string& name, void* functionSymbol)
     
     for (auto& [_, domain] : s_Storage.Domains)
     {
-        for (auto& [libName, library] : domain->Libraries)
+        for (auto& [_, library] : domain->Libraries)
         {
             if (!library->SymbolInstance) continue;
 
             CapyImage* img = library->MainImage.get();
-            for (auto& [clsName, cls] : img->Classes)
+            for (auto& [_, cls] : img->Classes)
             {
                 for (auto& [symName, sym] : cls->Symbols)
                 {

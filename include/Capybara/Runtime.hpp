@@ -98,6 +98,10 @@ struct CapyDomain {
     std::vector<std::string> CoreLibraries;
 };
 
+template<typename... Ts>
+struct capy_type_list {};
+
+
 struct Storage {
     std::unordered_map<std::string, std::unique_ptr<CapyDomain>> Domains;
     std::vector<std::string> KnownClassNames;

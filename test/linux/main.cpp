@@ -31,9 +31,48 @@ private:
     CapyClass* m_CapyClass;
 };
 
-static int Internal_Add(int a, int b)
+#define REGISTER_INTERNAL_CALL(name, func) \
+    capy_add_internal_call(#name, reinterpret_cast<void*>(func))
+
+using InternalTypes = capy_type_list<int, float, double>;
+
+template<typename List, template<typename> class Fn>
+struct for_each_type;
+
+template<template<typename> class Fn, typename... Ts>
+struct for_each_type<capy_type_list<Ts...>, Fn>
+{
+    static void apply()
+    {
+        (Fn<Ts>::apply(), ...); // fold expression (C++17+)
+    }
+};
+
+
+template<typename T>
+T Internal_Add(T a, T b)
 {
     return a + b;
+}
+
+template<typename T>
+struct RegisterInternalAdd
+{
+    static void apply()
+    {
+        if constexpr (std::is_same_v<T, int>)
+            REGISTER_INTERNAL_CALL(Internal_Add_int, &Internal_Add<T>);
+        else if constexpr (std::is_same_v<T, float>)
+            REGISTER_INTERNAL_CALL(Internal_Add_float, &Internal_Add<float>);
+        else if constexpr (std::is_same_v<T, double>)
+            REGISTER_INTERNAL_CALL(Internal_Add_double, &Internal_Add<double>);
+    }
+};
+
+template<typename List, template<typename> class Fn>
+void register_all()
+{
+    for_each_type<List, Fn>::apply();
 }
 
 
@@ -52,7 +91,7 @@ int main(int argc, char** argv)
 
     capy_reload_libraries_into_domain(d);
 
-    capy_add_internal_call("Internal_Add", (void*)&Internal_Add);
+    register_all<InternalTypes, RegisterInternalAdd>();
 
     CapyLibrary* l = capy_domain_library_open(d, "libtest-lib.so", false);
 

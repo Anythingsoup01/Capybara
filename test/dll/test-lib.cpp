@@ -38,8 +38,8 @@ namespace DLL
 
     void Test::Add(int a, int b)
     {
-        if (Internal_Add)
-            printf("%d + %d = %d\n", a, b, Internal_Add(a, b));
+        printf("%d + %d = %d\n", a, b, Internal_Add(a, b));
+        printf("%f + %f = %f\n", 1.5, 2.25, Internal_Add(1.5f, 2.25f));
     }
 
     Test* Test::Create()
