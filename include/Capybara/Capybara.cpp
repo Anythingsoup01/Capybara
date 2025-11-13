@@ -566,7 +566,7 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
 
     symbols = process_library(ef, symbols);
 
-    void* instance = dlopen(libPath.c_str(), RTLD_LAZY | RTLD_GLOBAL);
+    void* instance = dlopen(libPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (!instance)
     {
         std::cerr << "ERROR: " << dlerror() << "\n";
@@ -635,8 +635,10 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
             method->ReturnType = string_to_value_type(sym.ReturnType);
 
             if (sym.IsClassInstance)
+            {
+                method->ClassMember = true;
                 method->Parameters.push_back(ValueType::POINTER);
-
+            }
             for (auto& param : sym.ParameterTypes)
             {
                 ValueType type = string_to_value_type(param);
@@ -657,7 +659,6 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
         d->CoreLibraries.push_back(libPath.filename().c_str());
 
 
-    remove_core_classes(d);
     d->Libraries[libPath.filename().c_str()] = std::move(library);
 
     return d->Libraries.at(libPath.filename().string()).get();
@@ -763,31 +764,29 @@ void capy_field_data_set_from_field(void* instance, CapyField* cf, void* value)
 void* capy_function_call_from_method(CapyMethod* method, const std::vector<RuntimeValue>& values)
 {
     if (!method || !method->SymHandle) return nullptr;
-    if (method->Parameters.size() != values.size())
-        throw std::runtime_error("Too many arguments provided!");
+
+    if (values.size() != method->Parameters.size())
+        throw std::runtime_error("Incorrect number of arguments provided!");
 
     size_t nargs = values.size();
-
     std::vector<ffi_type*> ffiArgTypes(nargs);
     std::vector<void*> ffiArgValues(nargs);
     std::vector<RuntimeValue> localValues = values;
 
-    for (size_t i = 0; i < nargs; ++i)
-    {
-        ffiArgTypes[i] = get_ffi_type_p(localValues[i].Type);
+    for (size_t i = 0; i < method->Parameters.size(); ++i) {
+        ffiArgTypes[i] = get_ffi_type_p(method->Parameters[i]);
         ffiArgValues[i] = get_ffi_arg_p(localValues[i]);
     }
 
     ffi_cif cif;
     ffi_type* ffiRet = get_ffi_type_p(method->ReturnType);
 
+
     if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, nargs, ffiRet, ffiArgTypes.data()) != FFI_OK)
     {
-        std::cerr << "ffi_prep_cfi failed\n";
+        std::cerr << "ffi_prep_cif failed\n";
         return nullptr;
     }
-
-
 
     union {
         int16_t i16;
@@ -800,21 +799,31 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
         void* p;
     } ret;
 
-    ffi_call(&cif, FFI_FN(method->SymHandle), &ret, ffiArgValues.data());
+    // For member functions, reinterpret the pointer as a callable (void*, ...)
+    if (method->ClassMember)
+    {
+        using MemberFn = void(*)(...);
+        ffi_call(&cif, FFI_FN(reinterpret_cast<MemberFn>(method->SymHandle)), &ret, ffiArgValues.data());
+    }
+    else
+    {
+        ffi_call(&cif, FFI_FN(method->SymHandle), &ret, ffiArgValues.data());
+    }
+
     switch(method->ReturnType)
     {
-        case ValueType::INT16: return new int(ret.i16);
-        case ValueType::INT32: return new int(ret.i32);
-        case ValueType::INT64: return new int(ret.i64);
-        case ValueType::UINT16: return new int(ret.ui16);
-        case ValueType::UINT32: return new int(ret.ui32);
-        case ValueType::UINT64: return new int(ret.ui64);
+        case ValueType::INT16: return new int16_t(ret.i16);
+        case ValueType::INT32: return new int32_t(ret.i32);
+        case ValueType::INT64: return new int64_t(ret.i64);
+        case ValueType::UINT16: return new uint16_t(ret.ui16);
+        case ValueType::UINT32: return new uint32_t(ret.ui32);
+        case ValueType::UINT64: return new uint64_t(ret.ui64);
         case ValueType::FLOAT: return new float(ret.f);
         case ValueType::POINTER: return ret.p;
         case ValueType::VOID: return nullptr;
     }
-    return nullptr;
-}
+
+    return nullptr;}
 
 template<> constexpr const char* capy_type_name<float>() { return "Float"; }
 template<> constexpr const char* capy_type_name<double>() { return "Double"; }

@@ -65,7 +65,7 @@ struct CapyMethod {
     void* SymHandle;
     ValueType ReturnType;
     std::vector<ValueType> Parameters;
-    bool IsUnresolved;
+    bool ClassMember;
 };
 
 struct CapyVTable {

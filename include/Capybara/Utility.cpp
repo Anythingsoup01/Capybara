@@ -60,8 +60,23 @@ ValueType string_to_value_type(const std::string& value)
     if (strs_n_equal(value, { "const std::string", "std::string" }))
         return ValueType::POINTER;
 
+    if (strs_n_equal(value, { "short", "int16_t" }))
+        return ValueType::INT16;
+
     if (strs_n_equal(value, { "int", "int32_t" }))
         return ValueType::INT32;
+
+    if (strs_n_equal(value, { "long", "int64_t" }))
+        return ValueType::INT64;
+
+    if (strs_n_equal(value, { "unsigned short", "uint16_t" }))
+        return ValueType::UINT16;
+
+    if (strs_n_equal(value, { "unsigned int", "uint32_t" }))
+        return ValueType::UINT32;
+
+    if (strs_n_equal(value, { "unsigned long", "uint64_t" }))
+        return ValueType::UINT64;
 
     if (strs_n_equal(value, { "float" }))
         return ValueType::FLOAT;
@@ -91,15 +106,15 @@ void* get_ffi_arg_p(RuntimeValue& val)
 {
     switch (val.Type)
     {
-        case ValueType::INT16: return &val.i16;
-        case ValueType::INT32: return &val.i32;
-        case ValueType::INT64: return &val.i64;
-        case ValueType::UINT16: return &val.ui16;
-        case ValueType::UINT32: return &val.ui32;
-        case ValueType::UINT64: return &val.ui64;
+        case ValueType::INT16: std::cout << "INT16: " << val.i64 << "\n"; return &val.i16;
+        case ValueType::INT32: std::cout << "INT32: " << val.i64 << "\n"; return &val.i32;
+        case ValueType::INT64: std::cout << "INT64: " << val.i64 << "\n"; return &val.i64;
+        case ValueType::UINT16: std::cout << "UINT16: " << val.i64 << "\n"; return &val.ui16;
+        case ValueType::UINT32: std::cout << "UINT32: " << val.ui32 << "\n"; return &val.ui32;
+        case ValueType::UINT64: std::cout << "UINT64: " << val.i64 << "\n"; return &val.ui64;
         case ValueType::FLOAT: return &val.f;
-        case ValueType::POINTER: return val.p;
-        default: return nullptr;
+        case ValueType::POINTER: return &val.p;
+        case ValueType::VOID: return nullptr;
     }
 }
 
