@@ -12,52 +12,6 @@
 
 static Storage s_Storage;
 
-static void remove_core_classes(CapyDomain* cd)
-{
-    std::vector<std::string> coreClasses;
-    for (auto& [name, lib] : cd->Libraries)
-    {
-        if (!lib->IsCore)
-            continue;
-
-        CapyImage* image = lib->MainImage.get();
-        for (auto& [name, klass] : image->Classes)
-        {
-            if (name.empty())
-                continue;
-            coreClasses.push_back(name);
-        }
-    }
-
-    for (auto& [name, lib] : cd->Libraries)
-    {
-        if (lib->IsCore)
-            continue;
-
-        CapyImage* image = lib->MainImage.get();
-        std::unordered_map<std::string, std::unique_ptr<CapyClass>> goodClasses;
-        for (auto& [name, klass] : image->Classes)
-        {
-            bool found = false;
-            for (auto& coreClass : coreClasses)
-            {
-                if (strncmp(name.c_str(), coreClass.c_str(), coreClass.length()) == 0)
-                {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found)
-            {
-                goodClasses[name] = std::move(klass);
-            }
-        }
-
-        image->Classes = std::move(goodClasses);
-
-    }
-}
 
 static void update_symbol_namespaces(std::vector<Symbol>& symbols)
 {
@@ -707,57 +661,100 @@ CapyField* capy_field_from_class(CapyClass* c, const std::string& fieldName)
     return c->VTable->Fields[fieldName].get();
 }
 
-void capy_field_data_get_from_class(void* instance, CapyClass* cc, const std::string& fieldName, void* value)
+void capy_field_data_get(void* instance, CapyClass* cc, const std::string& fieldName, void* value)
 {
     CapyField* f = capy_field_from_class(cc, fieldName);
+
+    if (!f) return;
+
     if (instance)
     {
-        void* offsetVoidPTR = static_cast<void*>(static_cast<char*>(instance) + f->Offset);
-        memcpy(value, offsetVoidPTR, type_size(f->FieldType));
+        void* ptr = static_cast<char*>(instance) + f->Offset;
+        memcpy(value, ptr, type_size(f->FieldType));
     }
     else
     {
-        memcpy(value, f->SymHandle, type_size(f->FieldType));
+        if (f->DefaultData.size() < type_size(f->FieldType))
+            f->DefaultData.resize(type_size(f->FieldType));
+        memcpy(value, f->DefaultData.data(), type_size(f->FieldType));
     }
 }
 
-void capy_field_data_get_from_field(void* instance, CapyField* cf, void* value)
+void capy_field_data_get(void* instance, CapyField* cf, void* value)
 {
+    if (!cf) return;
+
     if (instance)
     {
-        void* offsetVoidPTR = static_cast<void*>(static_cast<char*>(instance) + cf->Offset);
-        memcpy(value, offsetVoidPTR, type_size(cf->FieldType));
+        void* ptr = static_cast<char*>(instance) + cf->Offset;
+        memcpy(value, ptr, type_size(cf->FieldType));
     }
     else
     {
-        memcpy(value, cf->SymHandle, type_size(cf->FieldType));
+        if (cf->DefaultData.size() < type_size(cf->FieldType))
+            cf->DefaultData.resize(type_size(cf->FieldType));
+        memcpy(value, cf->DefaultData.data(), type_size(cf->FieldType));
     }
 }
 
-void capy_field_data_set_from_class(void* instance, CapyClass* cc, const std::string& fieldName, void* value)
+void capy_field_data_set(void* instance, CapyClass* cc, const std::string& fieldName, void* value)
 {
     CapyField* f = capy_field_from_class(cc, fieldName);
-    if (instance)
-    {
-        void* offsetVoidPTR = static_cast<void*>(static_cast<char*>(instance) + f->Offset);
-        memcpy(offsetVoidPTR, value, type_size(f->FieldType));
-    }
-    else
-    {
-        memcpy(f->SymHandle, value, type_size(f->FieldType));
+    if (!f) return;
+
+    if (instance) {
+        void* ptr = static_cast<char*>(instance) + f->Offset;
+        memcpy(ptr, value, type_size(f->FieldType));
+    } else {
+        if (f->DefaultData.size() < type_size(f->FieldType))
+            f->DefaultData.resize(type_size(f->FieldType));
+        memcpy(f->DefaultData.data(), value, type_size(f->FieldType));
     }
 }
 
-void capy_field_data_set_from_field(void* instance, CapyField* cf, void* value)
+void capy_field_data_set(void* instance, CapyField* cf, void* value, int valueSizeOverride)
 {
+    if (!cf) {
+        fprintf(stderr, "capy_field_data_set: cf == nullptr\n");
+        return;
+    }
+
+    // If you have owner class size in metadata, validate bounds:
+    size_t size = type_size(cf->FieldType);
+
+    FieldSetterFunc setter = nullptr;
+
+    // Lookup setter for this type
+    auto it = s_Storage.TypeSetters.find(cf->FieldTypeString);
+    if (it != s_Storage.TypeSetters.end())
+        setter = it->second;
+
     if (instance)
     {
-        void* offsetVoidPTR = static_cast<void*>(static_cast<char*>(instance) + cf->Offset);
-        memcpy(offsetVoidPTR, value, type_size(cf->FieldType));
+        void* ptr = static_cast<char*>(instance) + cf->Offset;
+
+        if (setter)
+        {
+            setter(ptr, value); // use registered type handler
+        }
+        else
+        {
+            memcpy(ptr, value, size); // default memcpy
+        }
     }
     else
     {
-        memcpy(cf->SymHandle, value, type_size(cf->FieldType));
+        if (cf->DefaultData.size() < size)
+            cf->DefaultData.resize(size);
+
+        if (setter)
+        {
+            setter(cf->DefaultData.data(), value);
+        }
+        else
+        {
+            memcpy(cf->DefaultData.data(), value, size);
+        }
     }
 }
 
@@ -865,4 +862,9 @@ void capy_add_internal_call(const std::string& name, void* functionSymbol)
             }
         }
     }
+}
+
+void capy_add_type_setter(const std::string& name, FieldSetterFunc setter)
+{
+    s_Storage.TypeSetters[name] = setter;
 }

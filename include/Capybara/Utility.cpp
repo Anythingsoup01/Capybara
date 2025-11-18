@@ -106,15 +106,15 @@ void* get_ffi_arg_p(RuntimeValue& val)
 {
     switch (val.Type)
     {
-        case ValueType::INT16: std::cout << "INT16: " << val.i64 << "\n"; return &val.i16;
-        case ValueType::INT32: std::cout << "INT32: " << val.i64 << "\n"; return &val.i32;
-        case ValueType::INT64: std::cout << "INT64: " << val.i64 << "\n"; return &val.i64;
-        case ValueType::UINT16: std::cout << "UINT16: " << val.i64 << "\n"; return &val.ui16;
-        case ValueType::UINT32: std::cout << "UINT32: " << val.ui32 << "\n"; return &val.ui32;
-        case ValueType::UINT64: std::cout << "UINT64: " << val.i64 << "\n"; return &val.ui64;
-        case ValueType::FLOAT: return &val.f;
-        case ValueType::POINTER: return &val.p;
-        case ValueType::VOID: return nullptr;
+        case ValueType::INT16:      return &val.i16;
+        case ValueType::INT32:      return &val.i32;
+        case ValueType::INT64:      return &val.i64;
+        case ValueType::UINT16:     return &val.ui16;
+        case ValueType::UINT32:     return &val.ui32;
+        case ValueType::UINT64:     return &val.ui64;
+        case ValueType::FLOAT:      return &val.f;
+        case ValueType::POINTER:    return &val.p;
+        case ValueType::VOID:       return nullptr;
     }
 }
 

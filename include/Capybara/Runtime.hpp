@@ -58,7 +58,10 @@ struct CapyField {
     ValueType FieldType;
     unsigned int Offset;
     bool ClassMember;
+
     std::string FieldTypeString;
+
+    std::vector<uint8_t> DefaultData;
 };
 
 struct CapyMethod {
@@ -113,6 +116,7 @@ struct CapyDomain {
 template<typename... Ts>
 struct capy_type_list {};
 
+using FieldSetterFunc = void(*)(void* ptr, void* value);
 
 struct Storage {
     std::unordered_map<std::string, std::unique_ptr<CapyDomain>> Domains;
@@ -120,6 +124,7 @@ struct Storage {
     std::vector<std::string> IgnoredNamespaces;
     std::vector<std::string> IgnoredClassNames;
     std::unordered_map<std::string, void*> InternalCalls;
+    std::unordered_map<std::string, FieldSetterFunc> TypeSetters;
     bool IgnoreEmptyNamespaces;
     std::filesystem::path SearchPath;
 };

@@ -83,17 +83,17 @@ CapyField* capy_field_from_class(CapyClass* cc, const std::string& fieldName);
 
 // This function is used to get the data at a given field in a class
 // as long as you know the name of the field
-void capy_field_data_get_from_class(void* instance, CapyClass* cc, const std::string& fieldName, void* value);
+void capy_field_data_get(void* instance, CapyClass* cc, const std::string& fieldName, void* value);
 
 // This function is used to get the data at a given field
-void capy_field_data_get_from_field(void* instance, CapyField* cf, void* value);
+void capy_field_data_get(void* instance, CapyField* cf, void* value);
 
 // This function is used to set the data at a given field in a class
 // as long as you know the name of the field
-void capy_field_data_set_from_class(void* instance, CapyClass* cc, const std::string& fieldName, void* value);
+void capy_field_data_set(void* instance, CapyClass* cc, const std::string& fieldName, void* value);
 
 // This function is used to set the data at a give field in a class
-void capy_field_data_set_from_field(void* instance, CapyField* cf, void* value);
+void capy_field_data_set(void* instance, CapyField* cf, void* value, int valueSizeOverride = -1);
 
 // This function is used to call a given method with given values
 void* capy_function_call_from_method(CapyMethod* cm, const std::vector<RuntimeValue>& values);
@@ -122,3 +122,6 @@ void capy_register_internal_types();
 // This function let's you add internal functions, this should be handled after
 // adding / reloading all libraries to ensure everything gets the correct symbol
 void capy_add_internal_call(const std::string& name, void* functionSymbol);
+
+
+void capy_add_type_setter(const std::string& name, FieldSetterFunc setter);

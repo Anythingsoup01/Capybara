@@ -1,10 +1,10 @@
 set(SRCS
-    "include/Capybara/Utility.cpp"
     "include/Capybara/Capybara.cpp"
     "include/Capybara/Runtime.cpp"
-    "include/Capybara/Capybara.h"
-    "include/Capybara/cpypch.h"
+    "include/Capybara/Utility.cpp"
     "include/Capybara/Utility.h"
+    "include/Capybara/cpypch.h"
+    "include/Capybara/Capybara.h"
 )
 add_library(Capybara STATIC ${SRCS})
 set_property(TARGET Capybara PROPERTY CXX_STANDARD 20)
