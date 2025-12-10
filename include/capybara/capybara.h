@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Runtime.hpp"
+#include "runtime.h"
 
 // This function initializes our strorage, calling init basically
 // just clears the storage and sets default values.
@@ -123,5 +123,6 @@ void capy_register_internal_types();
 // adding / reloading all libraries to ensure everything gets the correct symbol
 void capy_add_internal_call(const std::string& name, void* functionSymbol);
 
-
+// This function let's the user define a specific setter for a type, this allows
+// users to do certain type conversions needed for classes / structs
 void capy_add_type_setter(const std::string& name, FieldSetterFunc setter);

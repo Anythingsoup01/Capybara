@@ -11,15 +11,18 @@ Project = {
     language = "C++",
     dialect = "20",
 
-    pch = "include/Capybara/cpypch.h",
+    pch = "pch/cpypch.h",
 
     files = {
-        "./include/Capybara/*.cpp",
-        "./include/Capybara/*.h",
+        "src/*.cpp",
+        "include/capybara/*.h",
+        "util/*.h"
     },
 
     includedirs = {
-        "include/Capybara"
+        "include",
+        "util",
+        "pch"
     },
 
     links = {
@@ -47,7 +50,7 @@ Project = {
 
     includedirs = {
         "test/linux",
-        "include/Capybara"
+        "include",
     },
 
     links = {

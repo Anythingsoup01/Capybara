@@ -1,5 +1,5 @@
-#include "Capybara.h"
-#include "Runtime.hpp"
+#include <capybara/capybara.h>
+#include <capybara/runtime.h>
 #include <iostream>
 
 #include <dlfcn.h>

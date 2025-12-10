@@ -10,15 +10,15 @@
 
 #define ADD_INTERNAL_TEMPLATE_CALL(name, ret) template<> ret name(ret a, ret b) { return name##_##ret(a, b); }
 
-INTERNAL_CALL(Internal_Add, int, int a, int b);
-INTERNAL_CALL(Internal_Add, float, float a, float b);
-
-
-template<typename T>
-T Internal_Add(T a, T b);
-
 namespace DLL
 {
+
+    INTERNAL_CALL(Internal_Add, int, int a, int b);
+    INTERNAL_CALL(Internal_Add, float, float a, float b);
+
+    template<typename T>
+        T Internal_Add(T a, T b);
+
     class Base
     {
     public:

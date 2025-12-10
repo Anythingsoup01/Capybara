@@ -1,7 +1,8 @@
 #pragma once
 
 #include <unordered_map>
-struct Symbol {
+
+struct SymbolMetaData {
     std::string Namespace;
     std::string ClassName;
     std::string Name;
@@ -21,64 +22,63 @@ enum class ValueType {
     POINTER,
 };
 
-struct RuntimeValue {
-    ValueType Type;
-    union {
-        int16_t i16;
-        int32_t i32;
-        int64_t i64;
-        uint16_t ui16;
-        uint32_t ui32;
-        uint64_t ui64;
-        float f;
-        void* p;
-    };
+// This function will let you convert a string into the relative
+// value type, this returns ValueType::VOID if there is no match
+ValueType string_to_value_type(const std::string &value);
 
-    RuntimeValue() : Type(ValueType::VOID), p(nullptr) {}
-    RuntimeValue(int16_t val) : Type(ValueType::INT16), i16(val) {}
-    RuntimeValue(int32_t val) : Type(ValueType::INT32), i32(val) {}
-    RuntimeValue(int64_t val) : Type(ValueType::INT64), i64(val) {}
-    RuntimeValue(uint16_t val) : Type(ValueType::UINT16), ui16(val) {}
-    RuntimeValue(uint32_t val) : Type(ValueType::UINT32), ui32(val) {}
-    RuntimeValue(uint64_t val) : Type(ValueType::UINT64), ui64(val) {}
-    RuntimeValue(float val) : Type(ValueType::FLOAT), f(val) {}
-    RuntimeValue(const char* val) : Type(ValueType::POINTER), p((void*)val) {}
-    RuntimeValue(void* val) : Type(ValueType::POINTER), p(val) {}
+// This function will return the corresponding size of the ValueType
+size_t type_size(ValueType type);
 
+struct RuntimeValue
+{
     template<typename T>
-    T As() const
+    RuntimeValue(T value)
     {
-        throw std::runtime_error("Unsupported Conversion!");
+        memset(m_Data, 0, sizeof(m_Data));
+        static_assert(sizeof(T) <= 128, "type too large");
+        memcpy(m_Data, &value, sizeof(T));
+
     }
 
+    void* raw_ptr() { return m_Data; }
+    const void* raw_ptr() const { return m_Data; }
+
+private:
+    char m_Data[128];
 };
 
-struct CapyField {
+struct CapyField
+{
     void* SymHandle;
     ValueType FieldType;
     unsigned int Offset;
     bool ClassMember;
 
+    // We use a string for custom types
+    // that are either non-standard or
+    // user made
     std::string FieldTypeString;
 
     std::vector<uint8_t> DefaultData;
 };
 
-struct CapyMethod {
+struct CapyMethod
+{
     void* SymHandle;
     ValueType ReturnType;
     std::vector<ValueType> Parameters;
     bool ClassMember;
 };
 
-struct CapyVTable {
+struct CapyVTable
+{
     std::unordered_map<std::string, std::unique_ptr<CapyMethod>> Methods;
     std::unordered_map<std::string, std::unique_ptr<CapyField>> Fields;
 };
 
 struct CapyClass {
     //                  Name
-    std::unordered_map<std::string, Symbol> Symbols;
+    std::unordered_map<std::string, SymbolMetaData> SymbolMetaDatas;
     std::unique_ptr<CapyVTable> VTable;
     std::string NameSpace;
     std::string ClassName;
@@ -89,7 +89,7 @@ struct CapyImage {
 };
 
 struct CapyLibrary {
-    std::unique_ptr<CapyImage> MainImage;
+    std::unique_ptr<CapyImage> Image;
     std::filesystem::path LibPath;
     void* SymbolInstance;
     bool IsCore;
@@ -99,7 +99,7 @@ struct CapyLibrary {
     std::unordered_map<uintptr_t, uintptr_t> OriginalRelocs;
 
     CapyLibrary(std::unique_ptr<CapyImage> image)
-        : MainImage(std::move(image)) {}
+        : Image(std::move(image)) {}
 
     ~CapyLibrary()
     {
@@ -113,6 +113,7 @@ struct CapyDomain {
     std::vector<std::string> CoreLibraries;
 };
 
+// TODO: Delete this if not needed
 template<typename... Ts>
 struct capy_type_list {};
 
@@ -123,6 +124,7 @@ struct Storage {
     std::vector<std::string> KnownClassNames;
     std::vector<std::string> IgnoredNamespaces;
     std::vector<std::string> IgnoredClassNames;
+    std::vector<std::string> IgnoredNames;
     std::unordered_map<std::string, void*> InternalCalls;
     std::unordered_map<std::string, FieldSetterFunc> TypeSetters;
     bool IgnoreEmptyNamespaces;

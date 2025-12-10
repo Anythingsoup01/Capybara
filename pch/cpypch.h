@@ -3,7 +3,6 @@
 #include <iostream>
 #include <fcntl.h>
 #include <unistd.h>
-#include <cxxabi.h>
 #include <ffi.h>
 #include <dlfcn.h>
 #include <stdexcept>
@@ -19,5 +18,3 @@
 #include <cerrno>
 #include <cstring>
 
-#include <libelfin/elf/elf++.hh>
-#include <libelfin/dwarf/dwarf++.hh>

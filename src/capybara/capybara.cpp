@@ -1,19 +1,15 @@
-#include "Runtime.hpp"
+#include "capybara/runtime.h"
 #include "cpypch.h"
-#include "Capybara.h"
-#include "Utility.h"
 
+#include "capybara/capybara.h"
+#include "libelf_util.h"
+#include "ffi_util.h"
 
-#include <cstring>
-#include <dlfcn.h>
-#include <libelfin/elf/elf++.hh>
-#include <elf.h>
-#include <libelfin/dwarf/dwarf++.hh>
 
 static Storage s_Storage;
 
 
-static void update_symbol_namespaces(std::vector<Symbol>& symbols)
+static void update_symbol_namespaces(std::vector<SymbolMetaData>& symbols)
 {
     for (auto& sym : symbols)
     {
@@ -38,319 +34,13 @@ static void update_symbol_namespaces(std::vector<Symbol>& symbols)
     }
 }
 
-static void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_stack, std::vector<Symbol>& outSymbols)
-{
-    std::string name = get_short_name(d);
-
-    // Keep track of scopes
-    bool is_namespace = d.tag == dwarf::DW_TAG::namespace_;
-    bool is_classname = d.tag == dwarf::DW_TAG::class_type;
-    bool is_structure = d.tag == dwarf::DW_TAG::structure_type;
-    bool is_union = d.tag == dwarf::DW_TAG::union_type;
-
-    bool is_scope = is_namespace || is_classname || is_structure || is_union;
-
-    if (is_namespace && !name.empty())
-    {
-
-        for (auto& ignoredNamespace : s_Storage.IgnoredNamespaces)
-        {
-            if (strncmp(name.c_str(), ignoredNamespace.c_str(), ignoredNamespace.length()) == 0)
-            {
-                return;
-            }
-        }
-    }
-    if ((is_classname || is_structure) && !name.empty())
-    {
-        for (auto& ignoredClassName : s_Storage.IgnoredClassNames)
-        {
-            if (strncmp(name.c_str(), ignoredClassName.c_str(), ignoredClassName.length()) == 0)
-            {
-                return;
-            }
-        }
-    }
-
-    if (is_scope && !name.empty())
-        scope_stack.push_back(name);
-
-
-
-
-    // Process functions
-    if (d.tag == dwarf::DW_TAG::subprogram) {
-
-        if (scope_stack.empty() && s_Storage.IgnoreEmptyNamespaces)
-            return;
-
-        // This removes any mangled symbols, not sure why
-        // there are any in -gdwarf-4 but there is :(
-        if (strncmp(name.c_str(), "_ZN", 3) == 0)
-            return;
-
-
-        std::vector<std::string> full_scope(scope_stack);
-
-        std::string qualified_name;
-        for (size_t i = 0; i < full_scope.size(); ++i)
-        {
-            if (i > 0) qualified_name += "::";
-            qualified_name += full_scope[i];
-        }
-
-        // Intentionally leaving the class name empty
-        // If we get an instance of Class* this,
-        // then we will convert it to the ClassName.
-        Symbol sym;
-        std::string name = get_short_name(d);
-        if (strs_n_equal(name, {"<anon>"}))
-            return;
-        sym.Name = name;
-        sym.Namespace = qualified_name;
-        sym.ReturnType = get_return_type(d);
-        sym.IsVariable = false;
-        sym.IsClassInstance = false;
-        sym.Offset = 0;
-
-
-        for (auto& child : d)
-        {
-            if (child.tag != dwarf::DW_TAG::formal_parameter)
-                continue;
-
-            if (!child.has(dwarf::DW_AT::type))
-                continue;
-
-            std::string paramType = resolve_type(child[dwarf::DW_AT::type].as_reference());
-            size_t pointer = paramType.rfind("*");
-            if (pointer != std::string::npos)
-            {
-                std::string lastNamespace;
-                std::string typeName = paramType.substr(0, pointer);
-                size_t lastNamespacePos = qualified_name.rfind("::");
-
-                if (lastNamespacePos != std::string::npos)
-                    lastNamespace = qualified_name.substr(lastNamespacePos + 2);
-                else
-                    lastNamespace = qualified_name;
-
-                if (strncmp(lastNamespace.c_str(), typeName.c_str(), typeName.size()) == 0)
-                {
-                    for (auto& name : s_Storage.KnownClassNames)
-                    {
-                        if (name == typeName)
-                        {
-                            sym.IsClassInstance = true;
-                            continue;
-                        }
-                    }
-                    s_Storage.KnownClassNames.push_back(typeName);
-                    sym.IsClassInstance = true;
-                }
-                else
-                {
-                    sym.ParameterTypes.push_back(paramType);
-                }
-
-            }
-            else
-            {
-                sym.ParameterTypes.push_back(paramType);
-            }
-        }
-
-        outSymbols.push_back(sym);
-
-    }
-
-    if (d.tag == dwarf::DW_TAG::member)
-    {
-        if (scope_stack.empty() && s_Storage.IgnoreEmptyNamespaces)
-            return;
-
-        std::vector<std::string> full_scope(scope_stack);
-
-        std::string qualified_name;
-        for (size_t i = 0; i < full_scope.size(); ++i) {
-            if (i > 0) qualified_name += "::";
-            qualified_name += full_scope[i];
-        }
-
-        uint64_t offset = 0;
-
-        if (d.has(dwarf::DW_AT::data_member_location)) 
-        {
-            const auto& attr = d[dwarf::DW_AT::data_member_location];
-
-            switch (attr.get_form()) 
-            {
-                case dwarf::DW_FORM::data1:
-                case dwarf::DW_FORM::data2:
-                case dwarf::DW_FORM::data4:
-                case dwarf::DW_FORM::data8:
-                case dwarf::DW_FORM::udata:
-                case dwarf::DW_FORM::sdata:
-                    offset = attr.as_uconstant();
-                    break;
-
-                case dwarf::DW_FORM::exprloc:
-                    std::cout << "VARIABLE NEEDS TO BE EVALUATED!\n";
-                    break;
-                default:
-                    break;
-            }
-
-        }
-
-        // Intentionally leaving the class name empty
-        // If we get an instance of Class* this,
-        // then we will convert it to the ClassName.
-        Symbol sym;
-        std::string name = get_short_name(d);
-        if (strs_n_equal(name, {"<anon>"}))
-            return;
-
-        sym.Name = name;
-        sym.Namespace = qualified_name;
-        sym.ReturnType = get_return_type(d);
-        sym.IsVariable = true;
-        sym.IsClassInstance = true;
-        sym.Offset = offset;
-
-        outSymbols.push_back(sym);
-
-    }
-
-    if (d.tag == dwarf::DW_TAG::variable)
-    {
-        if (scope_stack.empty() && s_Storage.IgnoreEmptyNamespaces)
-            return;
-        std::vector<std::string> full_scope(scope_stack);
-
-        std::string qualified_name;
-        for (size_t i = 0; i < full_scope.size(); ++i) {
-            if (i > 0) qualified_name += "::";
-            qualified_name += full_scope[i];
-        }
-
-        // Intentionally leaving the class name empty
-        // If we get an instance of Class* this,
-        // then we will convert it to the ClassName.
-        Symbol sym;
-        std::string name = get_short_name(d);
-        if (strs_n_equal(name, {"<anon>"}))
-            return;
-        sym.Name = name;
-        sym.Namespace = qualified_name;
-        sym.ReturnType = get_return_type(d);
-        sym.IsVariable = true;
-        sym.IsClassInstance = false;
-        sym.Offset = 0;
-
-        outSymbols.push_back(sym);
-
-    }
-
-    for (auto &child : d)
-        traverse_and_collect(child, scope_stack, outSymbols);
-
-    if (is_scope && !name.empty())
-        scope_stack.pop_back();
-}
-
-static std::vector<Symbol> process_library(const elf::elf& ef, const std::vector<Symbol>& symbols)
-{
-    std::unordered_map<std::string, std::string> symbolNames;
-    for (auto &sec : ef.sections())
-    {
-        if (sec.get_hdr().type != elf::sht::dynsym)
-            continue;
-
-        for (auto sym : sec.as_symtab())
-        {
-            auto &d = sym.get_data();
-            if (d.shnxd == elf::shn::undef) continue;
-
-            std::string demangledName = demangle_symbol_name(sym.get_name().c_str());
-
-            size_t paren = demangledName.find("(");
-            if (paren != std::string::npos)
-                demangledName = demangledName.substr(0, paren);
-
-            symbolNames[demangledName] = sym.get_name().c_str();
-        }
-    }
-
-
-    std::vector<Symbol> tmp;
-    
-    for (auto& sym : symbols)
-    {
-        std::string fullName;
-        if (!sym.Namespace.empty())
-            fullName += sym.Namespace + "::";
-        if (!sym.ClassName.empty())
-            fullName += sym.ClassName + "::"; 
-
-        fullName += sym.Name;
-
-        auto it = symbolNames.find(fullName);
-        if (it != symbolNames.end())
-        {
-            Symbol resolved = sym;
-            resolved.Signature = it->second;
-            tmp.push_back(resolved);
-        }
-    }
-
-
-
-    for (auto sym : symbols)
-    {
-        bool ignored = false;
-        for (auto& ignoredClassName : s_Storage.IgnoredClassNames)
-        {
-            if (strncmp(sym.Name.c_str(), ignoredClassName.c_str(), ignoredClassName.length()) == 0)
-            {
-                ignored = true;
-                break;
-            }
-        }
-
-        if (ignored)
-            continue;
-
-        std::vector<std::string> ignoredNames = { "gp_offset", "fp_offset", "overflow_arg_area", "reg_save_area", "tm_", "_vptr." };
-
-        for (auto& ignoredName : ignoredNames)
-        {
-            if (strncmp(sym.Name.c_str(), ignoredName.c_str(), ignoredName.length()) == 0)
-            {
-                ignored = true;
-                break;
-            }
-
-        }
-
-        if (ignored)
-            continue;
-
-        if (sym.Offset >= 0 && (sym.IsClassInstance && sym.IsVariable))
-        {
-            tmp.push_back(sym);
-            continue;
-        }
-    }
-
-    return tmp;
-}
 
 void capy_init()
 {
     s_Storage = Storage();
     s_Storage.IgnoredNamespaces = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" };
     s_Storage.IgnoredClassNames = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_", "__pthread", "timespec", "lconv", "_M_" };
+    s_Storage.IgnoredNames = { "gp_offset", "fp_offset", "overflow_arg_area", "reg_save_area", "tm_", "_vptr." };
     s_Storage.IgnoreEmptyNamespaces = false;
 }
 
@@ -423,15 +113,18 @@ std::string capy_dump_domain(const std::string& domainName)
     CapyDomain* domain = s_Storage.Domains[domainName].get();
     for (auto& [libName, lib] : domain->Libraries)
     {
-        str.append("  Library: " + libName + "\n");
-        CapyLibrary* libPtr = lib.get();
-        CapyImage* imagePtr = libPtr->MainImage.get();
-        for (auto& [className, klass] : imagePtr->Classes)
+        str.append("  Library: " + libName);
+        if (lib->IsCore)
+        {
+            str.append(" (CORE)");
+        }
+        str.append("\n");
+        for (auto& [className, klass] : lib->Image->Classes)
         {
             std::string adjustedClassName = className.empty() ? "<Functions Only>" : className;
-            str.append("    FullClassName: " + adjustedClassName + "\n");
+            str.append("    Full Class Name: " + adjustedClassName + "\n");
             CapyClass* klassPtr = klass.get();
-            for (auto& [name, sym] : klassPtr->Symbols)
+            for (auto& [name, sym] : klassPtr->SymbolMetaDatas)
             {
                 str.append("      Symbol: " + sym.Signature + "\n");
                 std::string symType = sym.IsVariable ? "Variable" : "Method";
@@ -509,16 +202,16 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
         std::cerr << "ERROR: " << e.what() << "\n";
     }
     auto image = std::make_unique<CapyImage>();
-    std::vector<Symbol> symbols;
+    std::vector<SymbolMetaData> symbols;
 
     for (auto &cu : dw.compilation_units())
-        traverse_and_collect(cu.root(), *(new std::vector<std::string>), symbols);
+        traverse_and_collect(cu.root(), *(new std::vector<std::string>), s_Storage, symbols);
 
     close(fd);
 
     update_symbol_namespaces(symbols);
 
-    symbols = process_library(ef, symbols);
+    symbols = process_library(ef, symbols, s_Storage);
 
     void* instance = dlopen(libPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (!instance)
@@ -546,9 +239,11 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
             continue;
 
         std::string fullName;
-        if (!sym.Namespace.empty())
+        if (!sym.Namespace.empty() && !sym.ClassName.empty())
+            fullName += sym.Namespace + "::" + sym.ClassName;
+        else if (!sym.Namespace.empty())
             fullName += sym.Namespace;
-        if (!sym.ClassName.empty())
+        else if (!sym.ClassName.empty())
             fullName += sym.ClassName;
 
 
@@ -570,7 +265,7 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
         }
 
         // Store symbol metadata
-        klass->Symbols[sym.Name] = sym;
+        klass->SymbolMetaDatas[sym.Name] = sym;
 
         if (sym.IsVariable)
         {
@@ -634,15 +329,17 @@ std::vector<std::string> capy_get_core_libraries_from_domain(const std::string &
 
 CapyImage* capy_library_get_image(CapyLibrary* l)
 {
-    return l->MainImage.get();
+    return l->Image.get();
 }
 
 CapyClass* capy_class_from_name(CapyImage* i, const std::string& nameSpace, const std::string& className)
 {
     std::string fullName;
-    if (!nameSpace.empty())
+    if (!nameSpace.empty() && !className.empty())
+        fullName += nameSpace + "::" + className;
+    else if (!nameSpace.empty())
         fullName += nameSpace;
-    if (!className.empty())
+    else if (!className.empty())
         fullName += className;
 
     if (i->Classes.find(fullName) != i->Classes.end())
@@ -772,7 +469,7 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
 
     for (size_t i = 0; i < method->Parameters.size(); ++i) {
         ffiArgTypes[i] = get_ffi_type_p(method->Parameters[i]);
-        ffiArgValues[i] = get_ffi_arg_p(localValues[i]);
+        ffiArgValues[i] = get_ffi_arg_p(localValues[i], method->Parameters[i]);
     }
 
     ffi_cif cif;
@@ -820,7 +517,8 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
         case ValueType::VOID: return nullptr;
     }
 
-    return nullptr;}
+    return nullptr;
+}
 
 template<> constexpr const char* capy_type_name<float>() { return "Float"; }
 template<> constexpr const char* capy_type_name<double>() { return "Double"; }
@@ -846,10 +544,10 @@ void capy_add_internal_call(const std::string& name, void* functionSymbol)
         {
             if (!library->SymbolInstance) continue;
 
-            CapyImage* img = library->MainImage.get();
+            CapyImage* img = library->Image.get();
             for (auto& [_, cls] : img->Classes)
             {
-                for (auto& [symName, sym] : cls->Symbols)
+                for (auto& [symName, sym] : cls->SymbolMetaDatas)
                 {
                     if (symName == name)
                     {
