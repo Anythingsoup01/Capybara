@@ -18,9 +18,9 @@ ffi_type* get_ffi_type_p(ValueType type)
     return &ffi_type_void;
 }
 
-void* get_ffi_arg_p(RuntimeValue& val, ValueType paramType)
+void* get_ffi_arg_p(RuntimeValue& val)
 {
-    switch (paramType)
+    switch (val.Type)
     {
         case ValueType::INT16:
         case ValueType::INT32:
@@ -32,7 +32,8 @@ void* get_ffi_arg_p(RuntimeValue& val, ValueType paramType)
         case ValueType::DOUBLE:
         case ValueType::POINTER:
             return val.raw_ptr();
-        case ValueType::VOID:       return nullptr;
+        case ValueType::VOID:
+            return nullptr;
     }
 }
 

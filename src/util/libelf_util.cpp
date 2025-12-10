@@ -60,7 +60,7 @@ std::string get_return_type(const dwarf::die& die)
     return "void*";
 } 
 
-void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_stack, Storage& storage, std::vector<SymbolMetaData>& outSymbols)
+void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_stack, Storage& storage, std::vector<_SymbolMetaData>& outSymbols)
 {
     std::string name = get_short_name(d);
 
@@ -121,7 +121,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         // Intentionally leaving the class name empty
         // If we get an instance of Class* this,
         // then we will convert it to the ClassName.
-        SymbolMetaData sym;
+        _SymbolMetaData sym;
         std::string name = get_short_name(d);
         if (strs_n_equal(name, {"<anon>"}))
             return;
@@ -225,7 +225,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         // Intentionally leaving the class name empty
         // If we get an instance of Class* this,
         // then we will convert it to the ClassName.
-        SymbolMetaData sym;
+        _SymbolMetaData sym;
         std::string name = get_short_name(d);
         if (strs_n_equal(name, {"<anon>"}))
             return;
@@ -245,6 +245,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
     {
         if (scope_stack.empty() && storage.IgnoreEmptyNamespaces)
             return;
+
         std::vector<std::string> full_scope(scope_stack);
 
         std::string qualified_name;
@@ -256,9 +257,9 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         // Intentionally leaving the class name empty
         // If we get an instance of Class* this,
         // then we will convert it to the ClassName.
-        SymbolMetaData sym;
+        _SymbolMetaData sym;
         std::string name = get_short_name(d);
-        if (strs_n_equal(name, {"<anon>"}))
+        if (strs_n_equal(name, {"<anon>", ""}))
             return;
         sym.Name = name;
         sym.Namespace = qualified_name;
@@ -278,7 +279,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         scope_stack.pop_back();
 }
 
-std::vector<SymbolMetaData> process_library(const elf::elf& ef, const std::vector<SymbolMetaData>& symbols, Storage& storage)
+std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vector<_SymbolMetaData>& symbols, Storage& storage)
 {
     std::unordered_map<std::string, std::string> symbolNames;
     for (auto &sec : ef.sections())
@@ -302,7 +303,7 @@ std::vector<SymbolMetaData> process_library(const elf::elf& ef, const std::vecto
     }
 
 
-    std::vector<SymbolMetaData> tmp;
+    std::vector<_SymbolMetaData> tmp;
     
     for (auto& sym : symbols)
     {
@@ -317,7 +318,7 @@ std::vector<SymbolMetaData> process_library(const elf::elf& ef, const std::vecto
         auto it = symbolNames.find(fullName);
         if (it != symbolNames.end())
         {
-            SymbolMetaData resolved = sym;
+            _SymbolMetaData resolved = sym;
             resolved.Signature = it->second;
             tmp.push_back(resolved);
         }

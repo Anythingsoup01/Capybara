@@ -1,8 +1,11 @@
 #include "cpypch.h"
 
+#include <cstdint>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <ffi.h>
+#include <memory>
+#include <string>
 
 #include "capybara/capybara.h"
 #include "capybara/runtime.h"
@@ -14,7 +17,7 @@
 static Storage s_Storage;
 
 
-static void update_symbol_namespaces(std::vector<SymbolMetaData>& symbols)
+static void update_symbol_namespaces(std::vector<_SymbolMetaData>& symbols)
 {
     for (auto& sym : symbols)
     {
@@ -82,7 +85,8 @@ void capy_set_ignored_classname(const std::vector<std::string>& ignoredClassName
 
 CapyDomain* capy_init_domain(const std::string& name)
 {
-    if (s_Storage.Domains.find(name) != s_Storage.Domains.end())
+    uint32_t domainHash = generate_hash(name);
+    if (s_Storage.Domains.find(domainHash) != s_Storage.Domains.end())
     {
         std::cerr << "ERROR: domain '" << name << "' already exists!\n";
         return nullptr;
@@ -90,13 +94,14 @@ CapyDomain* capy_init_domain(const std::string& name)
 
     auto domain = std::make_unique<CapyDomain>();
     CapyDomain* ptr = domain.get();
-    s_Storage.Domains[name] = std::move(domain);
+    s_Storage.Domains[domainHash] = std::move(domain);
     return ptr;
 }
 
 void capy_unload_domain(const std::string& domainName)
 {
-    auto it = s_Storage.Domains.find(domainName);
+    uint32_t domainHash = generate_hash(domainName);
+    auto it = s_Storage.Domains.find(domainHash);
     if (it == s_Storage.Domains.end())
     {
         std::cout << "Domain: " << domainName << " doesn't exist!\n";
@@ -107,54 +112,75 @@ void capy_unload_domain(const std::string& domainName)
     s_Storage.InternalCalls.clear();
 }
 
+void capy_unload_domain(const uint32_t& domainHash)
+{
+    auto it = s_Storage.Domains.find(domainHash);
+    if (it == s_Storage.Domains.end())
+    {
+        return;
+    }
+
+    s_Storage.Domains.erase(it);
+    s_Storage.InternalCalls.clear();
+}
+
 std::string capy_dump_domain(const std::string& domainName)
 {
-    if (s_Storage.Domains.find(domainName) == s_Storage.Domains.end())
+    uint32_t domainHash = generate_hash(domainName);
+    if (s_Storage.Domains.find(domainHash) == s_Storage.Domains.end())
     {
         std::cerr << "capy_dump_domain: Domain '" << domainName << "' doesn't exist!\n";
         return "<null>\n";
     }
     std::string str = "Domain: " + domainName + "\n";
-    CapyDomain* domain = s_Storage.Domains[domainName].get();
-    for (auto& [libName, lib] : domain->Libraries)
+    CapyDomain* domain = s_Storage.Domains[domainHash].get();
+    for (auto& [_, lib] : domain->Libraries)
     {
-        str.append("  Library: " + libName);
+        str.append("  Library: " + lib->Name);
         if (lib->IsCore)
         {
             str.append(" (CORE)");
         }
         str.append("\n");
-        for (auto& [className, klass] : lib->Image->Classes)
+        for (auto& [_, klass] : lib->Image->Classes)
         {
-            std::string adjustedClassName = className.empty() ? "<Functions Only>" : className;
+            std::string adjustedClassName = klass->ClassName.empty() ? "<Functions Only>" : klass->ClassName;
             str.append("    Full Class Name: " + adjustedClassName + "\n");
             CapyClass* klassPtr = klass.get();
-            for (auto& [name, sym] : klassPtr->SymbolMetaDatas)
+            for (auto& [name, sym] : klassPtr->VTable->Methods)
             {
-                str.append("      Symbol: " + sym.Signature + "\n");
-                std::string symType = sym.IsVariable ? "Variable" : "Method";
+                str.append("      Method Symbol: " + sym->SymbolMetaData->Signature + "\n");
+                std::string symType = "Method";
                 std::string adjustedSymName;
-                if (!sym.Namespace.empty())
-                    adjustedSymName.append(sym.Namespace + "::");
-                if (!sym.ClassName.empty())
-                    adjustedSymName.append(sym.ClassName + "::");
+                if (!sym->SymbolMetaData->Namespace.empty())
+                    adjustedSymName.append(sym->SymbolMetaData->Namespace + "::");
+                if (!sym->SymbolMetaData->ClassName.empty())
+                    adjustedSymName.append(sym->SymbolMetaData->ClassName + "::");
 
-                adjustedSymName.append(sym.Name);
-                str.append("        (" + symType + ") " + sym.ReturnType + " " + adjustedSymName);
-
-                if (!sym.IsVariable)
+                adjustedSymName.append(sym->SymbolMetaData->Name);
+                str.append("        (" + symType + ") " + sym->SymbolMetaData->ReturnType + " " + adjustedSymName);
+                str.append("(");
+                bool first = true;
+                for (auto& param : sym->SymbolMetaData->ParameterTypes)
                 {
-                    str.append("(");
-                    bool first = true;
-                    for (auto& param : sym.ParameterTypes)
-                    {
-                        if (!first) str.append(", ");
-                        str.append(param);
-                        first = false;
-                    }
-                    str.append(")");
+                    if (!first) str.append(", ");
+                    str.append(param);
+                    first = false;
                 }
-                str.append(";\n");
+                str.append(");\n");
+            }
+            for (auto& [name, sym] : klassPtr->VTable->Fields)
+            {
+                str.append("      Field Symbol: " + sym->SymbolMetaData->Signature + "\n");
+                std::string symType = "Field";
+                std::string adjustedSymName;
+                if (!sym->SymbolMetaData->Namespace.empty())
+                    adjustedSymName.append(sym->SymbolMetaData->Namespace + "::");
+                if (!sym->SymbolMetaData->ClassName.empty())
+                    adjustedSymName.append(sym->SymbolMetaData->ClassName + "::");
+
+                adjustedSymName.append(sym->SymbolMetaData->Name);
+                str.append("        (" + symType + ") " + sym->SymbolMetaData->ReturnType + " " + adjustedSymName + ";");
             }
         }
     }
@@ -191,11 +217,11 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
         libPath = std::filesystem::path(libName);
     }
 
+    uint32_t libHash = generate_hash(libPath.filename().string());
 
-
-    if (d->Libraries.find(libPath.filename().string()) != d->Libraries.end())
+    if (d->Libraries.find(libHash) != d->Libraries.end())
     {
-        return d->Libraries.at(libPath.filename().string()).get();
+        return d->Libraries.at(libHash).get();
     }
 
     elf::elf ef(elf::create_mmap_loader(fd));
@@ -207,7 +233,7 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
         std::cerr << "ERROR: " << e.what() << "\n";
     }
     auto image = std::make_unique<CapyImage>();
-    std::vector<SymbolMetaData> symbols;
+    std::vector<_SymbolMetaData> symbols;
 
     for (auto &cu : dw.compilation_units())
         traverse_and_collect(cu.root(), *(new std::vector<std::string>), s_Storage, symbols);
@@ -225,7 +251,7 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
         return nullptr;
     }
 
-    std::unordered_map<std::string, std::unique_ptr<CapyClass>> classes;
+    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> classes;
 
     for (auto& sym : symbols)
     {
@@ -233,11 +259,12 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
         if (!sym.Signature.empty())
             handle = dlsym(instance, sym.Signature.c_str());
         
+        uint32_t callHash = generate_hash(sym.Name);
 
         // Try internal calls first (highest priority)
-        if (s_Storage.InternalCalls.contains(sym.Name))
+        if (s_Storage.InternalCalls.contains(callHash))
         {
-            handle = s_Storage.InternalCalls[sym.Name];
+            handle = s_Storage.InternalCalls[callHash];
         }
 
         if (!handle && (!sym.IsVariable && !sym.IsClassInstance))
@@ -254,7 +281,8 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
 
         // Ensure class exists or create new
         CapyClass* klass = nullptr;
-        auto it = classes.find(fullName);
+        uint32_t classHash = generate_hash(fullName);
+        auto it = classes.find(classHash);
         if (it == classes.end())
         {
             auto newKlass = std::make_unique<CapyClass>();
@@ -262,15 +290,12 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
             newKlass->ClassName = sym.ClassName;
             newKlass->VTable = std::make_unique<CapyVTable>();
             klass = newKlass.get();
-            classes[fullName] = std::move(newKlass);
+            classes[classHash] = std::move(newKlass);
         }
         else
         {
             klass = it->second.get();
         }
-
-        // Store symbol metadata
-        klass->SymbolMetaDatas[sym.Name] = sym;
 
         if (sym.IsVariable)
         {
@@ -280,7 +305,9 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
             field->FieldTypeString = sym.ReturnType;
             field->Offset = sym.Offset;
             field->ClassMember = sym.IsVariable && sym.IsClassInstance;
-            klass->VTable->Fields[sym.Name] = std::move(field);
+            field->SymbolMetaData = &sym;
+            uint32_t fieldHash = generate_hash(sym.Name);
+            klass->VTable->Fields[fieldHash] = std::move(field);
         }
         else
         {
@@ -300,7 +327,9 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
                     method->Parameters.push_back(type);
             }
 
-            klass->VTable->Methods[sym.Name] = std::move(method);
+            method->SymbolMetaData = &sym;
+            uint32_t methodHash = generate_hash(sym.Name);
+            klass->VTable->Methods[methodHash] = std::move(method);
         }
     }
     image->Classes = std::move(classes);
@@ -313,14 +342,15 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
         d->CoreLibraries.push_back(libPath.filename().c_str());
 
 
-    d->Libraries[libPath.filename().c_str()] = std::move(library);
+    d->Libraries[libHash] = std::move(library);
 
-    return d->Libraries.at(libPath.filename().string()).get();
+    return d->Libraries.at(libHash).get();
 }
 
 std::vector<std::string> capy_get_core_libraries_from_domain(const std::string &domainName)
 {
-    auto it = s_Storage.Domains.find(domainName);
+    uint32_t domainHash = generate_hash(domainName);
+    auto it = s_Storage.Domains.find(domainHash);
     if (it == s_Storage.Domains.end())
     {
         std::cerr << "ERROR: domain '" << domainName << "' doesn't exists!\n";
@@ -347,20 +377,23 @@ CapyClass* capy_class_from_name(CapyImage* i, const std::string& nameSpace, cons
     else if (!className.empty())
         fullName += className;
 
-    if (i->Classes.find(fullName) != i->Classes.end())
-        return i->Classes.at(fullName).get();
+    uint32_t classHash = generate_hash(fullName);
+    if (i->Classes.find(classHash) != i->Classes.end())
+        return i->Classes.at(classHash).get();
 
     return nullptr;
 }
 
 CapyMethod* capy_method_from_class(CapyClass* c, const std::string& functionName)
 {
-    return c->VTable->Methods[functionName].get();
+    uint32_t funcHash = generate_hash(functionName);
+    return c->VTable->Methods[funcHash].get();
 }
 
 CapyField* capy_field_from_class(CapyClass* c, const std::string& fieldName)
 {
-    return c->VTable->Fields[fieldName].get();
+    uint32_t fieldHash = generate_hash(fieldName);
+    return c->VTable->Fields[fieldHash].get();
 }
 
 void capy_field_data_get(void* instance, CapyClass* cc, const std::string& fieldName, void* value)
@@ -376,9 +409,7 @@ void capy_field_data_get(void* instance, CapyClass* cc, const std::string& field
     }
     else
     {
-        if (f->DefaultData.size() < type_size(f->FieldType))
-            f->DefaultData.resize(type_size(f->FieldType));
-        memcpy(value, f->DefaultData.data(), type_size(f->FieldType));
+        memcpy(value, f->DefaultData.raw_ptr(), type_size(f->FieldType));
     }
 }
 
@@ -393,9 +424,7 @@ void capy_field_data_get(void* instance, CapyField* cf, void* value)
     }
     else
     {
-        if (cf->DefaultData.size() < type_size(cf->FieldType))
-            cf->DefaultData.resize(type_size(cf->FieldType));
-        memcpy(value, cf->DefaultData.data(), type_size(cf->FieldType));
+        memcpy(value, cf->DefaultData.raw_ptr(), type_size(cf->FieldType));
     }
 }
 
@@ -408,9 +437,7 @@ void capy_field_data_set(void* instance, CapyClass* cc, const std::string& field
         void* ptr = static_cast<char*>(instance) + f->Offset;
         memcpy(ptr, value, type_size(f->FieldType));
     } else {
-        if (f->DefaultData.size() < type_size(f->FieldType))
-            f->DefaultData.resize(type_size(f->FieldType));
-        memcpy(f->DefaultData.data(), value, type_size(f->FieldType));
+        memcpy(f->DefaultData.raw_ptr(), value, type_size(f->FieldType));
     }
 }
 
@@ -427,7 +454,8 @@ void capy_field_data_set(void* instance, CapyField* cf, void* value, int valueSi
     FieldSetterFunc setter = nullptr;
 
     // Lookup setter for this type
-    auto it = s_Storage.TypeSetters.find(cf->FieldTypeString);
+    uint32_t fieldSetterHash = generate_hash(cf->FieldTypeString);
+    auto it = s_Storage.TypeSetters.find(fieldSetterHash);
     if (it != s_Storage.TypeSetters.end())
         setter = it->second;
 
@@ -446,16 +474,13 @@ void capy_field_data_set(void* instance, CapyField* cf, void* value, int valueSi
     }
     else
     {
-        if (cf->DefaultData.size() < size)
-            cf->DefaultData.resize(size);
-
         if (setter)
         {
-            setter(cf->DefaultData.data(), value);
+            setter(cf->DefaultData.raw_ptr(), value);
         }
         else
         {
-            memcpy(cf->DefaultData.data(), value, size);
+            memcpy(cf->DefaultData.raw_ptr(), value, size);
         }
     }
 }
@@ -474,7 +499,7 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
 
     for (size_t i = 0; i < method->Parameters.size(); ++i) {
         ffiArgTypes[i] = get_ffi_type_p(method->Parameters[i]);
-        ffiArgValues[i] = get_ffi_arg_p(localValues[i], method->Parameters[i]);
+        ffiArgValues[i] = get_ffi_arg_p(localValues[i]);
     }
 
     ffi_cif cif;
@@ -487,16 +512,7 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
         return nullptr;
     }
 
-    union {
-        int16_t i16;
-        int32_t i32;
-        int64_t i64;
-        uint16_t ui16;
-        uint32_t ui32;
-        uint64_t ui64;
-        float f;
-        void* p;
-    } ret;
+    void* ret = nullptr;
 
     // For member functions, reinterpret the pointer as a callable (void*, ...)
     if (method->ClassMember)
@@ -508,21 +524,8 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
     {
         ffi_call(&cif, FFI_FN(method->SymHandle), &ret, ffiArgValues.data());
     }
+    return ret;
 
-    switch(method->ReturnType)
-    {
-        case ValueType::INT16: return new int16_t(ret.i16);
-        case ValueType::INT32: return new int32_t(ret.i32);
-        case ValueType::INT64: return new int64_t(ret.i64);
-        case ValueType::UINT16: return new uint16_t(ret.ui16);
-        case ValueType::UINT32: return new uint32_t(ret.ui32);
-        case ValueType::UINT64: return new uint64_t(ret.ui64);
-        case ValueType::FLOAT: return new float(ret.f);
-        case ValueType::POINTER: return ret.p;
-        case ValueType::VOID: return nullptr;
-    }
-
-    return nullptr;
 }
 
 template<> constexpr const char* capy_type_name<float>() { return "Float"; }
@@ -538,9 +541,10 @@ template<> constexpr const char* capy_type_name<uint64_t>() { return "UInt64"; }
 
 void capy_add_internal_call(const std::string& name, void* functionSymbol)
 {
-    if (s_Storage.InternalCalls.contains(name)) return;
+    uint32_t callHash = generate_hash(name);
+    if (s_Storage.InternalCalls.contains(callHash)) return;
 
-    s_Storage.InternalCalls[name] = functionSymbol;
+    s_Storage.InternalCalls[callHash] = functionSymbol;
 
     
     for (auto& [_, domain] : s_Storage.Domains)
@@ -552,12 +556,13 @@ void capy_add_internal_call(const std::string& name, void* functionSymbol)
             CapyImage* img = library->Image.get();
             for (auto& [_, cls] : img->Classes)
             {
-                for (auto& [symName, sym] : cls->SymbolMetaDatas)
+                for (auto& [symHash, sym] : cls->VTable->Fields)
                 {
-                    if (symName == name)
+                    uint32_t nameHash = generate_hash(name);
+                    if (symHash == nameHash)
                     {
                         // Directly patch the pointer in the plugin
-                        void** addr = reinterpret_cast<void**>(cls->VTable->Fields[symName]->SymHandle);
+                        void** addr = reinterpret_cast<void**>(cls->VTable->Fields[symHash]->SymHandle);
                         if (addr)
                             *addr = functionSymbol;
                     }
@@ -569,5 +574,6 @@ void capy_add_internal_call(const std::string& name, void* functionSymbol)
 
 void capy_add_type_setter(const std::string& name, FieldSetterFunc setter)
 {
-    s_Storage.TypeSetters[name] = setter;
+    uint32_t setterHash = generate_hash(name);
+    s_Storage.TypeSetters[setterHash] = setter;
 }

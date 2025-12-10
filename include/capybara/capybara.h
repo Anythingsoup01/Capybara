@@ -34,7 +34,12 @@ void capy_set_ignored_classname(const std::vector<std::string>& ignoredClassname
 CapyDomain* capy_init_domain(const std::string& name);
 
 // This function is used to unload a domain and all it's libraries
+// by using the domain's name as opposed to it's hash value
 void capy_unload_domain(const std::string& domainName);
+
+// This function is used to unload a domain and all it's libraries
+// by using it's hash value
+void capy_unload_domain(const uint32_t& domainHash);
 
 // This is a utility function that dumps the contents of a given domain
 // returns a string that can be printed normally or with a logging system

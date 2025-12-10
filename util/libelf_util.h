@@ -19,6 +19,6 @@ std::string get_return_type(const dwarf::die& die);
 // This function lets us traverse a DWARF Die and collect symbol
 // information, this is a CORE function and should only be used by
 // capybara
-void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_stack, Storage& storage, std::vector<SymbolMetaData>& outSymbols);
+void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_stack, Storage& storage, std::vector<_SymbolMetaData>& outSymbols);
 
-std::vector<SymbolMetaData> process_library(const elf::elf& ef, const std::vector<SymbolMetaData>& symbols, Storage& storage);
+std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vector<_SymbolMetaData>& symbols, Storage& storage);
