@@ -74,24 +74,13 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
 
     if (is_namespace && !name.empty())
     {
-
-        for (auto& ignoredNamespace : storage.IgnoredNamespaces)
-        {
-            if (strncmp(name.c_str(), ignoredNamespace.c_str(), ignoredNamespace.length()) == 0)
-            {
-                return;
-            }
-        }
+        if (strs_n_equal(name, storage.IgnoredNamespaces))
+            return;
     }
     if ((is_classname || is_structure) && !name.empty())
     {
-        for (auto& ignoredClassName : storage.IgnoredClassNames)
-        {
-            if (strncmp(name.c_str(), ignoredClassName.c_str(), ignoredClassName.length()) == 0)
-            {
-                return;
-            }
-        }
+        if (strs_n_equal(name, storage.IgnoredClassNames))
+            return;
     }
 
     if (is_scope && !name.empty())
@@ -230,7 +219,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         // then we will convert it to the ClassName.
         _SymbolMetaData sym;
         std::string name = get_short_name(d);
-        if (strs_n_equal(name, {"<anon>"}))
+        if (strs_n_equal(name, storage.IgnoredNames))
             return;
 
         sym.Name = name;
@@ -328,36 +317,8 @@ std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vect
     }
 
 
-
     for (auto sym : symbols)
     {
-        bool ignored = false;
-        for (auto& ignoredClassName : storage.IgnoredClassNames)
-        {
-            if (strncmp(sym.Name.c_str(), ignoredClassName.c_str(), ignoredClassName.length()) == 0)
-            {
-                ignored = true;
-                break;
-            }
-        }
-
-        if (ignored)
-            continue;
-
-
-        for (auto& ignoredName : storage.IgnoredNames)
-        {
-            if (strncmp(sym.Name.c_str(), ignoredName.c_str(), ignoredName.length()) == 0)
-            {
-                ignored = true;
-                break;
-            }
-
-        }
-
-        if (ignored)
-            continue;
-
         if (sym.Offset >= 0 && (sym.IsClassInstance && sym.IsVariable))
         {
             tmp.push_back(sym);

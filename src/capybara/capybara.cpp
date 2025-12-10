@@ -1,11 +1,8 @@
 #include "cpypch.h"
 
-#include <cstdint>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <ffi.h>
-#include <memory>
-#include <string>
 
 #include "capybara/capybara.h"
 #include "capybara/runtime.h"
@@ -48,7 +45,7 @@ void capy_init()
     s_Storage = Storage();
     s_Storage.IgnoredNamespaces = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" };
     s_Storage.IgnoredClassNames = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_", "__pthread", "timespec", "lconv", "_M_" };
-    s_Storage.IgnoredNames = { "gp_offset", "fp_offset", "overflow_arg_area", "reg_save_area", "tm_", "_vptr." };
+    s_Storage.IgnoredNames = { "gp_offset", "fp_offset", "overflow_arg_area", "reg_save_area", "tm_", "_vptr.", "<anon>" };
     s_Storage.IgnoreEmptyNamespaces = false;
 }
 
