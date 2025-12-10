@@ -1,5 +1,7 @@
 #include "string_util.h"
 
+#include <string.h>
+
 bool strs_n_equal(const std::string& mainString, const std::vector<std::string>& comparedTo)
 {
     bool isEqual = false;

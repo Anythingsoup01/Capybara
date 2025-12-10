@@ -1,7 +1,12 @@
-#include "capybara/runtime.h"
 #include "cpypch.h"
 
+#include <dlfcn.h>
+#include <fcntl.h>
+#include <ffi.h>
+
 #include "capybara/capybara.h"
+#include "capybara/runtime.h"
+
 #include "libelf_util.h"
 #include "ffi_util.h"
 

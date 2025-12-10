@@ -1,6 +1,9 @@
 #pragma once
 
+#include <memory.h>
 #include <unordered_map>
+
+#include <link.h>
 
 struct SymbolMetaData {
     std::string Namespace;

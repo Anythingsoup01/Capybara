@@ -2,6 +2,8 @@
 
 #include "capybara/runtime.h"
 
+#include <ffi.h>
+
 // This function will return the corresponding ffi_type to the
 // ValueType that is provided
 ffi_type* get_ffi_type_p(ValueType type);
