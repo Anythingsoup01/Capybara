@@ -104,7 +104,7 @@ struct CapyField
 
     RuntimeValue DefaultData;
 
-    _SymbolMetaData* SymbolMetaData;
+    _SymbolMetaData SymbolMetaData;
 };
 
 struct CapyMethod
@@ -115,7 +115,7 @@ struct CapyMethod
     std::vector<std::string> ParameterTypeStrings;
     bool ClassMember;
 
-    _SymbolMetaData* SymbolMetaData;
+    _SymbolMetaData SymbolMetaData;
 };
 
 struct CapyVTable

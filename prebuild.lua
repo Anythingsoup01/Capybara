@@ -77,7 +77,8 @@ Project = {
     },
 
     flags = {
-        "-gdwarf-2",
+        "-gdwarf-4",
+        "-g"
     },
 
     links = {
@@ -101,6 +102,7 @@ Project = {
     },
 
     flags = {
-        "-gdwarf-2",
+        "-gdwarf-4",
+        "-g"
     }
 }

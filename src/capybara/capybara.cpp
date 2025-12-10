@@ -147,40 +147,43 @@ std::string capy_dump_domain(const std::string& domainName)
             std::string adjustedClassName = klass->ClassName.empty() ? "<Functions Only>" : klass->ClassName;
             str.append("    Full Class Name: " + adjustedClassName + "\n");
             CapyClass* klassPtr = klass.get();
-            for (auto& [name, sym] : klassPtr->VTable->Methods)
+            for (auto& [hash, sym] : klassPtr->VTable->Methods)
             {
-                str.append("      Method Symbol: " + sym->SymbolMetaData->Signature + "\n");
+                str.append("      Method Symbol: " + sym->SymbolMetaData.Signature + "\n");
                 std::string symType = "Method";
                 std::string adjustedSymName;
-                if (!sym->SymbolMetaData->Namespace.empty())
-                    adjustedSymName.append(sym->SymbolMetaData->Namespace + "::");
-                if (!sym->SymbolMetaData->ClassName.empty())
-                    adjustedSymName.append(sym->SymbolMetaData->ClassName + "::");
+                if (!sym->SymbolMetaData.Namespace.empty())
+                    adjustedSymName.append(sym->SymbolMetaData.Namespace + "::");
+                if (!sym->SymbolMetaData.ClassName.empty())
+                    adjustedSymName.append(sym->SymbolMetaData.ClassName + "::");
 
-                adjustedSymName.append(sym->SymbolMetaData->Name);
-                str.append("        (" + symType + ") " + sym->SymbolMetaData->ReturnType + " " + adjustedSymName);
+                adjustedSymName.append(sym->SymbolMetaData.Name);
+                str.append("        (" + symType + ") " + sym->SymbolMetaData.ReturnType + " " + adjustedSymName);
                 str.append("(");
                 bool first = true;
-                for (auto& param : sym->SymbolMetaData->ParameterTypes)
+                for (auto& param : sym->SymbolMetaData.ParameterTypes)
                 {
+                    if (param.empty())
+                        continue;
+
                     if (!first) str.append(", ");
                     str.append(param);
                     first = false;
                 }
                 str.append(");\n");
             }
-            for (auto& [name, sym] : klassPtr->VTable->Fields)
+            for (auto& [hash, sym] : klassPtr->VTable->Fields)
             {
-                str.append("      Field Symbol: " + sym->SymbolMetaData->Signature + "\n");
+                str.append("      Field Symbol: " + sym->SymbolMetaData.Signature + "\n");
                 std::string symType = "Field";
                 std::string adjustedSymName;
-                if (!sym->SymbolMetaData->Namespace.empty())
-                    adjustedSymName.append(sym->SymbolMetaData->Namespace + "::");
-                if (!sym->SymbolMetaData->ClassName.empty())
-                    adjustedSymName.append(sym->SymbolMetaData->ClassName + "::");
+                if (!sym->SymbolMetaData.Namespace.empty())
+                    adjustedSymName.append(sym->SymbolMetaData.Namespace + "::");
+                if (!sym->SymbolMetaData.ClassName.empty())
+                    adjustedSymName.append(sym->SymbolMetaData.ClassName + "::");
 
-                adjustedSymName.append(sym->SymbolMetaData->Name);
-                str.append("        (" + symType + ") " + sym->SymbolMetaData->ReturnType + " " + adjustedSymName + ";");
+                adjustedSymName.append(sym->SymbolMetaData.Name);
+                str.append("        (" + symType + ") " + sym->SymbolMetaData.ReturnType + " " + adjustedSymName + ";\n");
             }
         }
     }
@@ -305,7 +308,7 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
             field->FieldTypeString = sym.ReturnType;
             field->Offset = sym.Offset;
             field->ClassMember = sym.IsVariable && sym.IsClassInstance;
-            field->SymbolMetaData = &sym;
+            field->SymbolMetaData = sym;
             uint32_t fieldHash = generate_hash(sym.Name);
             klass->VTable->Fields[fieldHash] = std::move(field);
         }
@@ -327,7 +330,7 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
                     method->Parameters.push_back(type);
             }
 
-            method->SymbolMetaData = &sym;
+            method->SymbolMetaData = sym;
             uint32_t methodHash = generate_hash(sym.Name);
             klass->VTable->Methods[methodHash] = std::move(method);
         }

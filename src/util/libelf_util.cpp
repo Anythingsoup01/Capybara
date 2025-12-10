@@ -175,6 +175,9 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
             }
             else
             {
+                if (paramType.empty())
+                    continue;
+
                 sym.ParameterTypes.push_back(paramType);
             }
         }
@@ -259,7 +262,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         // then we will convert it to the ClassName.
         _SymbolMetaData sym;
         std::string name = get_short_name(d);
-        if (strs_n_equal(name, {"<anon>", ""}))
+        if (strs_n_equal(name, {"<anon>"}))
             return;
         sym.Name = name;
         sym.Namespace = qualified_name;

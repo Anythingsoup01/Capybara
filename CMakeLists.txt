@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.28.3)
+cmake_minimum_required(VERSION 4.2.1)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(Capybara LANGUAGES CXX)
 add_compile_options(
@@ -6,18 +6,18 @@ add_compile_options(
 )
 
 set(SRCS
-    "src/util/string_util.cpp"
-    "src/util/cxxabi_util.cpp"
     "src/util/ffi_util.cpp"
     "src/util/libelf_util.cpp"
+    "src/util/string_util.cpp"
+    "src/util/cxxabi_util.cpp"
     "src/capybara/runtime.cpp"
     "src/capybara/capybara.cpp"
-    "include/capybara/runtime.h"
     "include/capybara/capybara.h"
-    "util/cxxabi_util.h"
-    "util/string_util.h"
+    "include/capybara/runtime.h"
     "util/libelf_util.h"
     "util/ffi_util.h"
+    "util/string_util.h"
+    "util/cxxabi_util.h"
 )
 add_library(Capybara STATIC ${SRCS})
 set_property(TARGET Capybara PROPERTY CXX_STANDARD 20)
@@ -76,7 +76,8 @@ target_link_libraries(test-lib
 )
 
 target_compile_options(test-lib PRIVATE
-    -gdwarf-2
+    -gdwarf-4
+    -g
 )
 
 set(SRCS
@@ -91,6 +92,7 @@ target_include_directories(base-class PRIVATE
 )
 
 target_compile_options(base-class PRIVATE
-    -gdwarf-2
+    -gdwarf-4
+    -g
 )
 
