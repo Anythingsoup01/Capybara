@@ -264,7 +264,8 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
         // Try internal calls first (highest priority)
         if (s_Storage.InternalCalls.contains(callHash))
         {
-            handle = s_Storage.InternalCalls[callHash];
+            void** handleAddr = reinterpret_cast<void**>(handle);
+            *handleAddr = s_Storage.InternalCalls[callHash];
         }
 
         if (!handle && (!sym.IsVariable && !sym.IsClassInstance))
@@ -527,15 +528,6 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
     return ret;
 
 }
-
-template<> constexpr const char* capy_type_name<float>() { return "Float"; }
-template<> constexpr const char* capy_type_name<double>() { return "Double"; }
-template<> constexpr const char* capy_type_name<int16_t>() { return "Int16"; }
-template<> constexpr const char* capy_type_name<int32_t>() { return "Int32"; }
-template<> constexpr const char* capy_type_name<int64_t>() { return "Int64"; }
-template<> constexpr const char* capy_type_name<uint16_t>() { return "UInt16"; }
-template<> constexpr const char* capy_type_name<uint32_t>() { return "UInt32"; }
-template<> constexpr const char* capy_type_name<uint64_t>() { return "UInt64"; }
 
 void capy_add_internal_call(const std::string& name, void* functionSymbol)
 {

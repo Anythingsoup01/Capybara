@@ -50,12 +50,12 @@ int main(int argc, char** argv)
 
     CapyDomain* d = capy_init_domain("Expansion");
 
+    ADD_INTERNAL_CALL(Internal_Add);
 
     capy_domain_library_open(d, "libbase-class.so", true);
 
     capy_reload_libraries_into_domain(d);
 
-    ADD_INTERNAL_CALL(Internal_Add);
 
     CapyLibrary* l = capy_domain_library_open(d, "libtest-lib.so", false);
 

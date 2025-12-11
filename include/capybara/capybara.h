@@ -103,29 +103,8 @@ void capy_field_data_set(void* instance, CapyField* cf, void* value, int valueSi
 // This function is used to call a given method with given values
 void* capy_function_call_from_method(CapyMethod* cm, const std::vector<RuntimeValue>& values);
 
-// This function lets you get the type name of well types, you can also add your
-// own by overloading this function as it's a template, the default types are as followed:
-//
-// It is recommended to use types from <cstdint> for complete cross platform ablility
-//
-// double   -> Double
-// float    -> Float
-//
-// int16_t  -> Int16
-// int32_t  -> Int32
-// int64_t  -> Int64
-//
-// uint16_t -> UInt16
-// uint32_t -> UInt32
-// uint16_t -> UInt64
-template<typename T> constexpr const char* capy_type_name();
-
-// This function lets you set up default types you want the libraries to see
-template<typename List>
-void capy_register_internal_types();
-
-// This function let's you add internal functions, this should be handled after
-// adding / reloading all libraries to ensure everything gets the correct symbol
+// This function let's you add internal functions, this can be done both before or
+// after loading libraries into the domain
 void capy_add_internal_call(const std::string& name, void* functionSymbol);
 
 // This function let's the user define a specific setter for a type, this allows
