@@ -1,5 +1,5 @@
-#include "Capybara.h"
-#include "Runtime.hpp"
+#include <capybara/capybara.h>
+#include <capybara/runtime.h>
 #include <iostream>
 
 #include <dlfcn.h>
@@ -31,49 +31,13 @@ private:
     CapyClass* m_CapyClass;
 };
 
-#define REGISTER_INTERNAL_CALL(name, func) \
-    capy_add_internal_call(#name, reinterpret_cast<void*>(func))
+#define ADD_INTERNAL_CALL(Name) capy_add_internal_call(#Name, (void*)&Name)
 
-using InternalTypes = capy_type_list<int, float, double>;
-
-template<typename List, template<typename> class Fn>
-struct for_each_type;
-
-template<template<typename> class Fn, typename... Ts>
-struct for_each_type<capy_type_list<Ts...>, Fn>
-{
-    static void apply()
-    {
-        (Fn<Ts>::apply(), ...); // fold expression (C++17+)
-    }
-};
-
-
-template<typename T>
-T Internal_Add(T a, T b)
+int Internal_Add(int a, int b)
 {
     return a + b;
 }
 
-template<typename T>
-struct RegisterInternalAdd
-{
-    static void apply()
-    {
-        if constexpr (std::is_same_v<T, int>)
-            REGISTER_INTERNAL_CALL(Internal_Add_int, &Internal_Add<T>);
-        else if constexpr (std::is_same_v<T, float>)
-            REGISTER_INTERNAL_CALL(Internal_Add_float, &Internal_Add<float>);
-        else if constexpr (std::is_same_v<T, double>)
-            REGISTER_INTERNAL_CALL(Internal_Add_double, &Internal_Add<double>);
-    }
-};
-
-template<typename List, template<typename> class Fn>
-void register_all()
-{
-    for_each_type<List, Fn>::apply();
-}
 
 
 int main(int argc, char** argv) 
@@ -91,7 +55,7 @@ int main(int argc, char** argv)
 
     capy_reload_libraries_into_domain(d);
 
-    register_all<InternalTypes, RegisterInternalAdd>();
+    ADD_INTERNAL_CALL(Internal_Add);
 
     CapyLibrary* l = capy_domain_library_open(d, "libtest-lib.so", false);
 
@@ -103,7 +67,7 @@ int main(int argc, char** argv)
     CapyMethod* cm = cw.GetMethod("Create");
     CapyMethod* pm = cw.GetMethod("Print");
     CapyMethod* pam = cw.GetMethod("PrintAgain");
-    CapyMethod* am = cw.GetMethod("Add");
+    CapyMethod* am = cw.GetMethod("CustomAdd");
 
     void* valPtr = cw.InvokeMethod(cm, {});
 

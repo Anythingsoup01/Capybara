@@ -36,10 +36,9 @@ namespace DLL
         printf( "Reprinting : %s\n", m_PreviousMessage);
     }
 
-    void Test::Add(int a, int b)
+    void Test::CustomAdd(int a, int b)
     {
-        printf("%d + %d = %d\n", a, b, Internal_Add(a, b));
-        printf("%f + %f = %f\n", 1.5, 2.25, Internal_Add(1.5f, 2.25f));
+        printf("%d + %d = %d\n", a, b, Add(a, b));
     }
 
     Test* Test::Create()

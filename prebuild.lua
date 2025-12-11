@@ -11,15 +11,18 @@ Project = {
     language = "C++",
     dialect = "20",
 
-    pch = "include/Capybara/cpypch.h",
+    pch = "pch/cpypch.h",
 
     files = {
-        "./include/Capybara/*.cpp",
-        "./include/Capybara/*.h",
+        "src/*.cpp",
+        "include/capybara/*.h",
+        "util/*.h"
     },
 
     includedirs = {
-        "include/Capybara"
+        "include",
+        "util",
+        "pch"
     },
 
     links = {
@@ -47,7 +50,7 @@ Project = {
 
     includedirs = {
         "test/linux",
-        "include/Capybara"
+        "include",
     },
 
     links = {
@@ -74,7 +77,8 @@ Project = {
     },
 
     flags = {
-        "-gdwarf-2",
+        "-gdwarf-4",
+        "-g"
     },
 
     links = {
@@ -91,6 +95,8 @@ Project = {
     files = {
         "./test/dll/base-class.cpp",
         "./test/dll/base-class.h",
+        "./test/dll/internal_calls.cpp",
+        "./test/dll/internal_calls.h",
     },
 
     includedirs = {
@@ -98,6 +104,7 @@ Project = {
     },
 
     flags = {
-        "-gdwarf-2",
+        "-gdwarf-4",
+        "-g"
     }
 }

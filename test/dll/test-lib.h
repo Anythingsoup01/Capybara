@@ -11,7 +11,7 @@ namespace DLL
         void Print(const char* msg) override;
         void PrintAgain() override;
 
-        void Add(int a, int b);
+        void CustomAdd(int a, int b);
 
         static Test* Create();
     private:
