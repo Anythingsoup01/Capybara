@@ -537,8 +537,6 @@ template<> constexpr const char* capy_type_name<uint16_t>() { return "UInt16"; }
 template<> constexpr const char* capy_type_name<uint32_t>() { return "UInt32"; }
 template<> constexpr const char* capy_type_name<uint64_t>() { return "UInt64"; }
 
-
-
 void capy_add_internal_call(const std::string& name, void* functionSymbol)
 {
     uint32_t callHash = generate_hash(name);

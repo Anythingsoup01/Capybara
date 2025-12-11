@@ -83,6 +83,8 @@ target_compile_options(test-lib PRIVATE
 set(SRCS
     "./test/dll/base-class.cpp"
     "./test/dll/base-class.h"
+    "./test/dll/internal_calls.cpp"
+    "./test/dll/internal_calls.h"
 )
 add_library(base-class SHARED ${SRCS})
 set_property(TARGET base-class PROPERTY CXX_STANDARD 20)

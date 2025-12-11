@@ -95,6 +95,8 @@ Project = {
     files = {
         "./test/dll/base-class.cpp",
         "./test/dll/base-class.h",
+        "./test/dll/internal_calls.cpp",
+        "./test/dll/internal_calls.h",
     },
 
     includedirs = {
