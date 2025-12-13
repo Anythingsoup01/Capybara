@@ -161,8 +161,11 @@ void capy_jit_set_source_path(const std::filesystem::path& sourcePath, bool recu
 
     auto w = std::make_unique<DirectoryWatcher>();
     w->OnCreate = fswatcher_on_create;
+    w->OnCreateCustom = jit.FileWatcherOnCreate;
     w->OnModify = fswatcher_on_modified;
+    w->OnModifyCustom = jit.FileWatcherOnModify;
     w->OnDelete = fswatcher_on_deleted;
+    w->OnDeleteCustom = jit.FileWatcherOnDelete;
     start_watcher(*w, sourcePath);
     watchers.push_back(std::move(w));
 
@@ -174,8 +177,11 @@ void capy_jit_set_source_path(const std::filesystem::path& sourcePath, bool recu
             {
                 auto w = std::make_unique<DirectoryWatcher>();
                 w->OnCreate = fswatcher_on_create;
+                w->OnCreateCustom = jit.FileWatcherOnCreate;
                 w->OnModify = fswatcher_on_modified;
+                w->OnModifyCustom = jit.FileWatcherOnModify;
                 w->OnDelete = fswatcher_on_deleted;
+                w->OnDeleteCustom = jit.FileWatcherOnDelete;
                 start_watcher(*w, entry.path().string());
                 watchers.push_back(std::move(w));
             }
@@ -229,4 +235,34 @@ void capy_jit_add_core_library(const std::filesystem::path& libPath, const std::
             jit.CoreBinaryPaths.push_back(libBinaryPath);
     }
 
+}
+
+void capy_jit_set_fw_on_create(FileCallback callback)
+{
+    for (auto& fw : s_Storage.JITStorage.FileWatchers)
+    {
+        fw->OnCreateCustom = callback;
+    }
+
+    s_Storage.JITStorage.FileWatcherOnCreate = callback;
+}
+
+void capy_jit_set_fw_on_modify(FileCallback callback)
+{
+    for (auto& fw : s_Storage.JITStorage.FileWatchers)
+    {
+        fw->OnModifyCustom = callback;
+    }
+
+    s_Storage.JITStorage.FileWatcherOnModify = callback;
+}
+
+void capy_jit_set_fw_on_delete(FileCallback callback)
+{
+    for (auto& fw : s_Storage.JITStorage.FileWatchers)
+    {
+        fw->OnDeleteCustom = callback;
+    }
+
+    s_Storage.JITStorage.FileWatcherOnDelete = callback;
 }

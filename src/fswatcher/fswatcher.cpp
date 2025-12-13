@@ -25,11 +25,13 @@ void poll_watcher(DirectoryWatcher& w)
         {
             w.Files.push_back({path, writeTime});
             if (w.OnCreate) w.OnCreate(path);
+            if (w.OnCreateCustom) w.OnCreateCustom(path);
         }
         else if (w.Files[index].WriteTime != writeTime)
         {
             w.Files[index].WriteTime = writeTime;
             if (w.OnModify) w.OnModify(path);
+            if (w.OnModifyCustom) w.OnModifyCustom(path);
         }
     }
 
@@ -42,6 +44,7 @@ void poll_watcher(DirectoryWatcher& w)
             w.Files[i] = w.Files.back();
             w.Files.pop_back();
             if (w.OnDelete) w.OnDelete(deletedFile);
+            if (w.OnDeleteCustom) w.OnDeleteCustom(deletedFile);
         }
         else
         {

@@ -306,6 +306,9 @@ struct CapyStorage {
 struct CapyJITStorage
 {
     std::vector<std::unique_ptr<DirectoryWatcher>> FileWatchers;
+    FileCallback FileWatcherOnCreate;
+    FileCallback FileWatcherOnDelete;
+    FileCallback FileWatcherOnModify;
 
     std::mutex PendingFileMutex;
     std::vector<std::filesystem::path> PendingFiles;

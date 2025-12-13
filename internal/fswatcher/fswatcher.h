@@ -24,10 +24,14 @@ struct DirectoryWatcher
     std::atomic<bool> Running;
     std::thread Worker;
 
-    // Callbacks
+    // Default Callbacks
     FileCallback OnCreate = nullptr;
     FileCallback OnModify = nullptr;
     FileCallback OnDelete = nullptr;
+
+    FileCallback OnCreateCustom = nullptr;
+    FileCallback OnModifyCustom = nullptr;
+    FileCallback OnDeleteCustom = nullptr;
 };
 
 // This is a helper function that helps index of a file

@@ -28,3 +28,15 @@ void capy_jit_set_binary_path(const std::filesystem::path& binaryPath);
 // This function will add a core library to both JIT and Capy for
 // continuity 
 void capy_jit_add_core_library(const std::filesystem::path& libPath, const std::filesystem::path& libBinaryPath);
+
+// This function will let you provide extra functionality to the
+// File Watcher On Create callback
+void capy_jit_set_fw_on_create(FileCallback callback);
+
+// This function will let you provide extra functionality to the
+// File Watcher On Modify callback
+void capy_jit_set_fw_on_modify(FileCallback callback);
+
+// This function will let you provide extra functionality to the
+// File Watcher On Delete callback
+void capy_jit_set_fw_on_delete(FileCallback callback);
