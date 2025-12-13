@@ -16,12 +16,12 @@ Project = {
     files = {
         "src/*.cpp",
         "include/capybara/*.h",
-        "util/*.h"
+        "internal/*.h",
     },
 
     includedirs = {
         "include",
-        "util",
+        "internal",
         "pch"
     },
 
@@ -61,50 +61,4 @@ Project = {
     },
 }
 
-Project = {
-    name = "test-lib",
-    kind = "SharedLib",
-    language = "C++",
-    dialect = "20",
-
-    files = {
-        "./test/dll/test-lib.cpp",
-        "./test/dll/test-lib.h",
-    },
-
-    includedirs = {
-        "test/dll",
-    },
-
-    flags = {
-        "-gdwarf-4",
-        "-g"
-    },
-
-    links = {
-        "base-class",
-    }
-}
-
-Project = {
-    name = "base-class",
-    kind = "SharedLib",
-    language = "C++",
-    dialect = "20",
-
-    files = {
-        "./test/dll/base-class.cpp",
-        "./test/dll/base-class.h",
-        "./test/dll/internal_calls.cpp",
-        "./test/dll/internal_calls.h",
-    },
-
-    includedirs = {
-        "test/dll",
-    },
-
-    flags = {
-        "-gdwarf-4",
-        "-g"
-    }
-}
+External = "test/dll"

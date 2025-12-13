@@ -1,19 +1,30 @@
 #pragma once
 
-#include <capybara/capybara.h>
 #include <capybara/runtime.h>
 
-CapyDomain* capy_jit_init(const char* domainName)
-{
-    // Initialize Capy
-    capy_init();
+// This will initialize a CapyDomain that will utilize 
+// a custom JIT implementation for hot reloading and
+// compiling files
+CapyDomain* capy_jit_init(const std::string& domainName);
 
-    // Create the Domain
-    CapyDomain* cd = capy_init_domain(domainName);
+bool capy_jit_poll();
 
-    // Have JIT store this as the Root Domain
-    // this should automatically call capy_reload_libraries_into_domain(StoredDomain);
+// This functions will set a directory that will automatically be searched
+// for any file changes pertaining to .c, .cpp, .h, .hpp files and dynamically
+//
+// Setting recursive will set a listener in sub-directories, this can and
+// will flood a debugger with processes
+//
+// The event listener will trigger a compilations, which can be delayed with
+// capy_pause_compilation(true / false)
+//
+// There can only be one parent directory set
+void capy_jit_set_source_path(const std::filesystem::path& sourcePath, bool recursive);
 
-    return cd;
+// This function is used to set both the internal BinaryPath for reloading
+// binaries and the BinaryPath for JIT to compile to
+void capy_jit_set_binary_path(const std::filesystem::path& binaryPath);
 
-}
+// This function will add a core library to both JIT and Capy for
+// continuity 
+void capy_jit_add_core_library(const std::filesystem::path& libPath, const std::filesystem::path& libBinaryPath);

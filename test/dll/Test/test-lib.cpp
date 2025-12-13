@@ -1,5 +1,4 @@
 #include "test-lib.h"
-#include "base-class.h"
 #include <stdio.h>
 #include <iostream>
 
@@ -40,6 +39,8 @@ namespace DLL
     {
         printf("%d + %d = %d\n", a, b, Add(a, b));
     }
+
+    void Test::UpdateCheck() {}
 
     Test* Test::Create()
     {

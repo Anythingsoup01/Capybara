@@ -12,6 +12,8 @@ void capy_init();
 void capy_shutdown();
 
 // This function let's the user set a default search path for libraries
+//
+// Setting this will also tell JIT where to store binaries when compiled
 void capy_set_libraries_path(const std::filesystem::path& libPath);
 
 // This function lets you specify a namespace you want to ignore,
@@ -31,6 +33,12 @@ void capy_set_ignored_classname(const std::vector<std::string>& ignoredClassname
 
 // This function will initialize a new domain, if it exists already it'll
 // return nullptr for memory security
+//
+// Marking isRoot true will treat this domain as a root domain, when initializing
+// any other domain with isRoot set to false will copy the root domain into the
+// new domain. This allows for seamless hot reloading if you set up your own
+// JIT compiler, however using capy_jit_init, avaliable by including
+// jit/jit.h from capy, will allow you to set this up easily and is recommended.
 CapyDomain* capy_init_domain(const std::string& name);
 
 // This function is used to unload a domain and all it's libraries

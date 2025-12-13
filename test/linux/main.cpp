@@ -1,5 +1,9 @@
+
 #include <capybara/capybara.h>
 #include <capybara/runtime.h>
+
+#include <jit/jit.h>
+
 #include <iostream>
 
 #include <dlfcn.h>
@@ -42,20 +46,28 @@ int Internal_Add(int a, int b)
 
 int main(int argc, char** argv) 
 {
-    capy_init();
-
-    capy_set_libraries_path("build");
+    capy_jit_set_source_path("test/dll/Test", true);
+    capy_jit_set_binary_path("test/dll/Test/build");
 
     capy_set_ignored_classname({"IgnoreThis"});
 
-    CapyDomain* d = capy_init_domain("Expansion");
+    auto* cd = capy_jit_init("Expansion");
 
-    ADD_INTERNAL_CALL(Internal_Add);
 
-    capy_domain_library_open(d, "libbase-class.so", true);
+    std::cout << cd << "\n";
 
-    capy_reload_libraries_into_domain(d);
+    capy_jit_add_core_library("test/dll/Base", "build/test/dll/Base/libbase-class.so");
 
+    while (true) 
+    {
+        if (capy_jit_poll())
+        {
+            std::cout << capy_dump_domain("Expansion");
+        }
+    }
+
+#   if 0
+    CapyDomain* d;
 
     CapyLibrary* l = capy_domain_library_open(d, "libtest-lib.so", false);
 
@@ -63,6 +75,7 @@ int main(int argc, char** argv)
 
     CapyWrapper cw(i, "DLL", "Test");
 
+    ADD_INTERNAL_CALL(Internal_Add);
 
     CapyMethod* cm = cw.GetMethod("Create");
     CapyMethod* pm = cw.GetMethod("Print");
@@ -85,7 +98,7 @@ int main(int argc, char** argv)
     }
 
     std::cout << capy_dump_domain("Expansion");
-
+#   endif
     capy_unload_domain("Expansion");
 
     return 0;

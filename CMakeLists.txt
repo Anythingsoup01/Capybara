@@ -6,18 +6,23 @@ add_compile_options(
 )
 
 set(SRCS
+    "src/fswatcher/fswatcher.cpp"
     "src/util/ffi_util.cpp"
     "src/util/libelf_util.cpp"
+    "src/util/fswatcher_utils.cpp"
     "src/util/string_util.cpp"
     "src/util/cxxabi_util.cpp"
     "src/capybara/runtime.cpp"
     "src/capybara/capybara.cpp"
+    "src/jit/jit.cpp"
     "include/capybara/capybara.h"
     "include/capybara/runtime.h"
-    "util/libelf_util.h"
-    "util/ffi_util.h"
-    "util/string_util.h"
-    "util/cxxabi_util.h"
+    "internal/fswatcher/fswatcher.h"
+    "internal/util/libelf_util.h"
+    "internal/util/fswatcher_utils.h"
+    "internal/util/ffi_util.h"
+    "internal/util/string_util.h"
+    "internal/util/cxxabi_util.h"
 )
 add_library(Capybara STATIC ${SRCS})
 set_property(TARGET Capybara PROPERTY CXX_STANDARD 20)
@@ -25,7 +30,7 @@ set_property(TARGET Capybara PROPERTY CXX_STANDARD 20)
 target_precompile_headers(Capybara PUBLIC pch/cpypch.h)
 target_include_directories(Capybara PRIVATE
     "include"
-    "util"
+    "internal"
     "pch"
 )
 
@@ -60,41 +65,4 @@ target_compile_options(test-linux-exe PRIVATE
     -rdynamic
 )
 
-set(SRCS
-    "./test/dll/test-lib.cpp"
-    "./test/dll/test-lib.h"
-)
-add_library(test-lib SHARED ${SRCS})
-set_property(TARGET test-lib PROPERTY CXX_STANDARD 20)
-
-target_include_directories(test-lib PRIVATE
-    "test/dll"
-)
-
-target_link_libraries(test-lib
-    base-class
-)
-
-target_compile_options(test-lib PRIVATE
-    -gdwarf-4
-    -g
-)
-
-set(SRCS
-    "./test/dll/base-class.cpp"
-    "./test/dll/base-class.h"
-    "./test/dll/internal_calls.cpp"
-    "./test/dll/internal_calls.h"
-)
-add_library(base-class SHARED ${SRCS})
-set_property(TARGET base-class PROPERTY CXX_STANDARD 20)
-
-target_include_directories(base-class PRIVATE
-    "test/dll"
-)
-
-target_compile_options(base-class PRIVATE
-    -gdwarf-4
-    -g
-)
-
+add_subdirectory(test/dll)

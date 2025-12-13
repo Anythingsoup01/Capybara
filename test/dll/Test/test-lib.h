@@ -2,7 +2,6 @@
 #include "base-class.h"
 
 
-
 namespace DLL
 {
     class Test : public Base
@@ -12,6 +11,8 @@ namespace DLL
         void PrintAgain() override;
 
         void CustomAdd(int a, int b);
+
+        void UpdateCheck();
 
         static Test* Create();
     private:

@@ -1,4 +1,4 @@
-#include "ffi_util.h"
+#include "util/ffi_util.h"
 
 ffi_type* get_ffi_type_p(ValueType type)
 {

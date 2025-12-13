@@ -6,6 +6,7 @@ namespace DLL
 
     Base::Base()
     {
+
         printf("Base Class!\n");
     }
 }

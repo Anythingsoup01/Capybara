@@ -7,12 +7,14 @@
 #include "capybara/capybara.h"
 #include "capybara/runtime.h"
 
-#include "libelf_util.h"
-#include "ffi_util.h"
+#include "fswatcher/fswatcher.h"
 
+#include "util/libelf_util.h"
+#include "util/ffi_util.h"
 
-static Storage s_Storage;
+#include "util/fswatcher_utils.h"
 
+RuntimeStorage s_Storage;
 
 static void update_symbol_namespaces(std::vector<_SymbolMetaData>& symbols)
 {
@@ -20,7 +22,7 @@ static void update_symbol_namespaces(std::vector<_SymbolMetaData>& symbols)
     {
         std::string& NameSpace = sym.Namespace;
         //std::cout << "NAMESPACE: " << NameSpace << "::" << sym.Name << "\n";
-        for (auto& knownName : s_Storage.KnownClassNames)
+        for (auto& knownName : s_Storage.ConfigStorage.KnownClassNames)
         {
             size_t foundName = NameSpace.rfind(knownName);
             if (foundName != std::string::npos)
@@ -39,98 +41,139 @@ static void update_symbol_namespaces(std::vector<_SymbolMetaData>& symbols)
     }
 }
 
+static std::vector<std::string> s_IGNORED_NAMESPACES = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" };
+static std::vector<std::string> s_IGNORED_CLASSNAMES = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_", "__pthread", "timespec", "lconv", "_M_" };
+static std::vector<std::string> s_IGNORED_NAMES = { "<anon>", "gp_offset", "fp_offset", "overflow_arg_area", "reg_save_area", "tm_", "_vptr." };
 
 void capy_init()
 {
-    s_Storage = Storage();
-    s_Storage.IgnoredNamespaces = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" };
-    s_Storage.IgnoredClassNames = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_", "__pthread", "timespec", "lconv", "_M_" };
-    s_Storage.IgnoredNames = { "gp_offset", "fp_offset", "overflow_arg_area", "reg_save_area", "tm_", "_vptr.", "<anon>" };
-    s_Storage.IgnoreEmptyNamespaces = false;
+    auto& cfg = s_Storage.ConfigStorage;
+    if (cfg.IgnoredNamespaces.empty())
+    {
+        cfg.IgnoredNamespaces = s_IGNORED_NAMESPACES;
+    }
+    else
+    {
+        for (const auto& key : s_IGNORED_NAMESPACES)
+            cfg.IgnoredNamespaces.push_back(key);
+    }
+
+    if (cfg.IgnoredClassNames.empty())
+    {
+        cfg.IgnoredClassNames = s_IGNORED_CLASSNAMES;
+    }
+    else
+    {
+        for (const auto& key : s_IGNORED_CLASSNAMES)
+            cfg.IgnoredClassNames.push_back(key);
+    }
+
+    if (cfg.IgnoredNames.empty())
+    {
+        cfg.IgnoredNames = s_IGNORED_NAMES;
+    }
+    else
+    {
+        for (const auto& key : s_IGNORED_NAMES)
+            cfg.IgnoredNames.push_back(key);
+    }
 }
 
 void capy_shutdown()
 {
-    for (auto& [name, domain] : s_Storage.Domains)
+    for (auto& [name, domain] : s_Storage.Storage.Domains)
     {
         CapyDomain* d = domain.get();
         capy_unload_domain(name);
     }
+
+    for (auto& watcher : s_Storage.JITStorage.FileWatchers)
+    {
+        stop_watcher(*watcher);
+    }
+
+    s_Storage.JITStorage.FileWatchers.clear();
 }
 
 void capy_set_libraries_path(const std::filesystem::path &libPath)
 {
-    s_Storage.SearchPath = libPath;
+    s_Storage.ConfigStorage.BinaryPath = libPath;
 }
 
 void capy_set_ignored_namespace(const std::vector<std::string>& ignoredNamespace)
 {
     for (auto& nameSpace : ignoredNamespace)
-        s_Storage.IgnoredNamespaces.push_back(nameSpace);
+        s_Storage.ConfigStorage.IgnoredNamespaces.push_back(nameSpace);
 }
 
 void capy_set_ignore_empty_namespace(bool active)
 {
-    s_Storage.IgnoreEmptyNamespaces = active;
+    s_Storage.ConfigStorage.IgnoreEmptyNamespaces = active;
 }
 
 void capy_set_ignored_classname(const std::vector<std::string>& ignoredClassName)
 {
     for (auto& className : ignoredClassName)
-        s_Storage.IgnoredClassNames.push_back(className);
+        s_Storage.ConfigStorage.IgnoredClassNames.push_back(className);
 }
 
 CapyDomain* capy_init_domain(const std::string& name)
 {
+    auto& storage = s_Storage.Storage;
     uint32_t domainHash = generate_hash(name);
-    if (s_Storage.Domains.find(domainHash) != s_Storage.Domains.end())
+    if (storage.Domains.find(domainHash) != storage.Domains.end())
     {
         std::cerr << "ERROR: domain '" << name << "' already exists!\n";
         return nullptr;
     }
 
-    auto domain = std::make_unique<CapyDomain>();
+    std::unique_ptr<CapyDomain> domain = std::make_unique<CapyDomain>();
     CapyDomain* ptr = domain.get();
-    s_Storage.Domains[domainHash] = std::move(domain);
+
+    storage.Domains[domainHash] = std::move(domain);
+
     return ptr;
 }
 
 void capy_unload_domain(const std::string& domainName)
 {
+    auto& storage = s_Storage.Storage;
     uint32_t domainHash = generate_hash(domainName);
-    auto it = s_Storage.Domains.find(domainHash);
-    if (it == s_Storage.Domains.end())
+    auto it = storage.Domains.find(domainHash);
+    if (it == storage.Domains.end())
     {
         std::cout << "Domain: " << domainName << " doesn't exist!\n";
         return;
     }
 
-    s_Storage.Domains.erase(it);
-    s_Storage.InternalCalls.clear();
+    storage.Domains.erase(it);
+    storage.InternalCalls.clear();
 }
 
 void capy_unload_domain(const uint32_t& domainHash)
 {
-    auto it = s_Storage.Domains.find(domainHash);
-    if (it == s_Storage.Domains.end())
+    auto& storage = s_Storage.Storage;
+    auto it = storage.Domains.find(domainHash);
+    if (it == storage.Domains.end())
     {
         return;
     }
 
-    s_Storage.Domains.erase(it);
-    s_Storage.InternalCalls.clear();
+    storage.Domains.erase(it);
+    storage.InternalCalls.clear();
 }
 
 std::string capy_dump_domain(const std::string& domainName)
 {
+    auto& storage = s_Storage.Storage;
     uint32_t domainHash = generate_hash(domainName);
-    if (s_Storage.Domains.find(domainHash) == s_Storage.Domains.end())
+    if (storage.Domains.find(domainHash) == storage.Domains.end())
     {
         std::cerr << "capy_dump_domain: Domain '" << domainName << "' doesn't exist!\n";
         return "<null>\n";
     }
     std::string str = "Domain: " + domainName + "\n";
-    CapyDomain* domain = s_Storage.Domains[domainHash].get();
+    CapyDomain* domain = storage.Domains[domainHash].get();
     for (auto& [_, lib] : domain->Libraries)
     {
         str.append("  Library: " + lib->Name);
@@ -191,7 +234,7 @@ std::string capy_dump_domain(const std::string& domainName)
 
 void capy_reload_libraries_into_domain(CapyDomain* cd)
 {
-    for (auto& entry : std::filesystem::directory_iterator(s_Storage.SearchPath))
+    for (auto& entry : std::filesystem::directory_iterator(s_Storage.ConfigStorage.BinaryPath))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".so")
         {
@@ -202,19 +245,24 @@ void capy_reload_libraries_into_domain(CapyDomain* cd)
 
 CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName, bool isCore)
 {
-    std::filesystem::path libPath = s_Storage.SearchPath;
+    std::filesystem::path libPath = s_Storage.ConfigStorage.BinaryPath;
     libPath.append(libName);
 
     int fd = open(libPath.c_str(), O_RDONLY);
-    if (fd < 0 && !s_Storage.SearchPath.empty())
+    if (fd < 0 && !s_Storage.ConfigStorage.BinaryPath.empty())
     {
         fd = open(libName.c_str(), O_RDONLY);
         if (fd < 0)
         {
-            std::cerr << "ERROR: failed to open file: " << libPath.generic_string() << "\n";
+            std::cerr << "FILE: failed to open file: " << libName << "\n";
             return nullptr;
         }
         libPath = std::filesystem::path(libName);
+    }
+    else if (fd < 0)
+    {
+        std::cerr << "FILE ERROR: failed to open file: " << libPath.generic_string() << "\n";
+        return nullptr;
     }
 
     uint32_t libHash = generate_hash(libPath.filename().string());
@@ -223,6 +271,8 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
     {
         return d->Libraries.at(libHash).get();
     }
+
+    auto& storage = s_Storage.Storage;
 
     elf::elf ef(elf::create_mmap_loader(fd));
     dwarf::dwarf dw;
@@ -242,12 +292,12 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
 
     update_symbol_namespaces(symbols);
 
-    symbols = process_library(ef, symbols, s_Storage);
+    symbols = process_library(ef, symbols, storage);
 
     void* instance = dlopen(libPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (!instance)
     {
-        std::cerr << "ERROR: " << dlerror() << "\n";
+        std::cerr << "DLOPEN ERROR: " << dlerror() << "\n";
         return nullptr;
     }
 
@@ -262,10 +312,10 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
         uint32_t callHash = generate_hash(sym.Name);
 
         // Try internal calls first (highest priority)
-        if (s_Storage.InternalCalls.contains(callHash))
+        if (s_Storage.Storage.InternalCalls.contains(callHash))
         {
             void** handleAddr = reinterpret_cast<void**>(handle);
-            *handleAddr = s_Storage.InternalCalls[callHash];
+            *handleAddr = s_Storage.Storage.InternalCalls[callHash];
         }
 
         if (!handle && (!sym.IsVariable && !sym.IsClassInstance))
@@ -340,8 +390,9 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
     library->IsCore = isCore;
 
     if (isCore)
+    {
         d->CoreLibraries.push_back(libPath.filename().c_str());
-
+    }
 
     d->Libraries[libHash] = std::move(library);
 
@@ -350,9 +401,10 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
 
 std::vector<std::string> capy_get_core_libraries_from_domain(const std::string &domainName)
 {
+    auto& storage = s_Storage.Storage;
     uint32_t domainHash = generate_hash(domainName);
-    auto it = s_Storage.Domains.find(domainHash);
-    if (it == s_Storage.Domains.end())
+    auto it = storage.Domains.find(domainHash);
+    if (it == storage.Domains.end())
     {
         std::cerr << "ERROR: domain '" << domainName << "' doesn't exists!\n";
         return {};
@@ -444,6 +496,7 @@ void capy_field_data_set(void* instance, CapyClass* cc, const std::string& field
 
 void capy_field_data_set(void* instance, CapyField* cf, void* value, int valueSizeOverride)
 {
+    auto& storage = s_Storage.Storage;
     if (!cf) {
         fprintf(stderr, "capy_field_data_set: cf == nullptr\n");
         return;
@@ -456,8 +509,8 @@ void capy_field_data_set(void* instance, CapyField* cf, void* value, int valueSi
 
     // Lookup setter for this type
     uint32_t fieldSetterHash = generate_hash(cf->FieldTypeString);
-    auto it = s_Storage.TypeSetters.find(fieldSetterHash);
-    if (it != s_Storage.TypeSetters.end())
+    auto it = storage.TypeSetters.find(fieldSetterHash);
+    if (it != storage.TypeSetters.end())
         setter = it->second;
 
     if (instance)
@@ -531,13 +584,14 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
 
 void capy_add_internal_call(const std::string& name, void* functionSymbol)
 {
+    auto& storage = s_Storage.Storage;
     uint32_t callHash = generate_hash(name);
-    if (s_Storage.InternalCalls.contains(callHash)) return;
+    if (storage.InternalCalls.contains(callHash)) return;
 
-    s_Storage.InternalCalls[callHash] = functionSymbol;
+    storage.InternalCalls[callHash] = functionSymbol;
 
     
-    for (auto& [_, domain] : s_Storage.Domains)
+    for (auto& [_, domain] : storage.Domains)
     {
         for (auto& [_, library] : domain->Libraries)
         {
@@ -565,5 +619,5 @@ void capy_add_internal_call(const std::string& name, void* functionSymbol)
 void capy_add_type_setter(const std::string& name, FieldSetterFunc setter)
 {
     uint32_t setterHash = generate_hash(name);
-    s_Storage.TypeSetters[setterHash] = setter;
+    s_Storage.Storage.TypeSetters[setterHash] = setter;
 }
