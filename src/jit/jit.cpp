@@ -266,3 +266,8 @@ void capy_jit_set_fw_on_delete(FileCallback callback)
 
     s_Storage.JITStorage.FileWatcherOnDelete = callback;
 }
+
+CapyDomain* capy_jit_get_domain()
+{
+    return s_Storage.JITStorage.JitDomain;
+}

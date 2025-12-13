@@ -40,3 +40,7 @@ void capy_jit_set_fw_on_modify(FileCallback callback);
 // This function will let you provide extra functionality to the
 // File Watcher On Delete callback
 void capy_jit_set_fw_on_delete(FileCallback callback);
+
+// This function will let you retrieve the JIT domain
+// useful for retrieving after capy_jit_poll
+CapyDomain* capy_jit_get_domain();
