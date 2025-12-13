@@ -81,12 +81,25 @@ void capy_init()
 
 void capy_shutdown()
 {
-    for (auto& [name, domain] : s_Storage.Storage.Domains)
+    // ---- Unload all domains ----
     {
-        CapyDomain* d = domain.get();
-        capy_unload_domain(name);
+        s_Storage.Storage.Domains.clear();
+        // unique_ptr cleanup:
+        //  - CapyDomain
+        //  - CapyLibrary
+        //  - dlclose via ~CapyLibrary
     }
 
+    // ---- Clear internal call bindings ----
+    s_Storage.Storage.InternalCalls.clear();
+    s_Storage.Storage.TypeSetters.clear();
+
+    // ---- Clear config ----
+    s_Storage.ConfigStorage.KnownClassNames.clear();
+    s_Storage.ConfigStorage.IgnoredNamespaces.clear();
+    s_Storage.ConfigStorage.IgnoredClassNames.clear();
+    s_Storage.ConfigStorage.IgnoredNames.clear();
+    s_Storage.ConfigStorage.BinaryPath.clear();
 }
 
 void capy_set_libraries_path(const std::filesystem::path &libPath)

@@ -109,13 +109,59 @@ void capy_jit_shutdown()
 {
     auto& jit = s_Storage.JITStorage;
 
-    for (auto& watcher : s_Storage.JITStorage.FileWatchers)
+    // ---- Stop JIT worker thread ----
+    if (jit.JitRunning.exchange(false))
     {
-        stop_watcher(*watcher);
+        if (jit.JitThread.joinable())
+            jit.JitThread.join();
     }
 
-    s_Storage.JITStorage.FileWatchers.clear();
+    // ---- Stop file watchers ----
+    for (auto& watcher : jit.FileWatchers)
+    {
+        watcher.reset(); // triggers DirectoryWatcher destructor
+    }
+    jit.FileWatchers.clear();
 
+    // ---- Clear pending compilation state ----
+    {
+        std::lock_guard<std::mutex> lock(jit.PendingFileMutex);
+        jit.PendingFiles.clear();
+        jit.FilesToCompile.clear();
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(jit.CompilationMutex);
+        jit.CompilationCommands.clear();
+    }
+
+    jit.JitCompilationNeeded.store(false);
+
+    // ---- Destroy JIT domain if present ----
+    if (jit.JitDomain)
+    {
+        auto& domains = s_Storage.Storage.Domains;
+
+        for (auto it = domains.begin(); it != domains.end(); ++it)
+        {
+            if (it->second.get() == jit.JitDomain)
+            {
+                domains.erase(it); // deletes domain + libraries
+                break;
+            }
+        }
+
+        jit.JitDomain = nullptr;
+        jit.JitDomainHash = 0;
+        jit.DomainName.clear();
+    }
+
+    // ---- Clear JIT paths ----
+    jit.CorePaths.clear();
+    jit.CoreBinaryPaths.clear();
+    jit.BinaryPath.clear();
+
+    // ---- Final runtime shutdown ----
     capy_shutdown();
 }
 
