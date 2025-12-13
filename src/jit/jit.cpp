@@ -105,6 +105,20 @@ CapyDomain* capy_jit_init(const std::string &domainName)
     return cd;
 }
 
+void capy_jit_shutdown()
+{
+    auto& jit = s_Storage.JITStorage;
+
+    for (auto& watcher : s_Storage.JITStorage.FileWatchers)
+    {
+        stop_watcher(*watcher);
+    }
+
+    s_Storage.JITStorage.FileWatchers.clear();
+
+    capy_shutdown();
+}
+
 bool capy_jit_poll()
 {
     std::filesystem::path rootDir = std::filesystem::current_path();

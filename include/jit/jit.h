@@ -7,6 +7,8 @@
 // compiling files
 CapyDomain* capy_jit_init(const std::string& domainName);
 
+void capy_jit_shutdown();
+
 bool capy_jit_poll();
 
 // This functions will set a directory that will automatically be searched

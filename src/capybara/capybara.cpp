@@ -87,12 +87,6 @@ void capy_shutdown()
         capy_unload_domain(name);
     }
 
-    for (auto& watcher : s_Storage.JITStorage.FileWatchers)
-    {
-        stop_watcher(*watcher);
-    }
-
-    s_Storage.JITStorage.FileWatchers.clear();
 }
 
 void capy_set_libraries_path(const std::filesystem::path &libPath)
