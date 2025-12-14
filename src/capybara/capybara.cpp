@@ -275,7 +275,7 @@ void capy_jit_set_source_path(const std::filesystem::path& sourcePath, bool recu
     w->OnModifyCustom = jit.FileWatcherOnModify;
     w->OnDelete = fswatcher_on_deleted;
     w->OnDeleteCustom = jit.FileWatcherOnDelete;
-    start_watcher(*w, sourcePath);
+    start_watcher(*w, sourcePath, 10);
     watchers.push_back(std::move(w));
 
     if (recursive)
@@ -291,7 +291,7 @@ void capy_jit_set_source_path(const std::filesystem::path& sourcePath, bool recu
                 w->OnModifyCustom = jit.FileWatcherOnModify;
                 w->OnDelete = fswatcher_on_deleted;
                 w->OnDeleteCustom = jit.FileWatcherOnDelete;
-                start_watcher(*w, entry.path().string());
+                start_watcher(*w, entry.path().string(), 10);
                 watchers.push_back(std::move(w));
             }
         }
