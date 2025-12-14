@@ -183,10 +183,9 @@ void capy_jit_shutdown()
             jit.JitThread.join();
     }
 
-    jit.WatcherStorage.Watchers.clear();
-    if (jit.WatcherStorage.Worker.joinable())
-        jit.WatcherStorage.Worker.join();
+    fswatcher_stop_storage(jit.WatcherStorage);
 
+    jit.WatcherStorage.Watchers.clear();
     {
         std::lock_guard<std::mutex> lock(jit.JitMutex);
         jit.PendingFiles.clear();
