@@ -1,87 +1,173 @@
 #include <cpypch.h>
 #include "fswatcher/fswatcher.h"
 
-int find_file(const DirectoryWatcher& w, const std::filesystem::path& path)
-{
-    for (size_t i = 0; i < w.Files.size(); i++)
-        if (w.Files[i].Path == path)
-            return (int)i;
-    return -1;
-}
+#include "util/string_util.h"
+
+#include <unordered_set>
 
 // Poll function, checks for created/modified/deleted files
-void poll_watcher(DirectoryWatcher& w)
+void fswatcher_poll_watcher(DirectoryWatcher& w, DirectoryWatcherStorage& storage)
 {
+    std::unordered_set<std::filesystem::path> seen;
+    
     // Check for new/modified files
-    for (auto& entry : std::filesystem::directory_iterator(w.Directory))
+    try { for (auto& entry : std::filesystem::directory_iterator(w.Directory))
     {
-        if (!std::filesystem::is_regular_file(entry)) continue;
+        if (!entry.is_regular_file()) continue;
 
-        const std::filesystem::path& path = entry.path();
+        const auto& path = entry.path();
         const auto writeTime = std::filesystem::last_write_time(entry);
+        const auto size = entry.file_size();
 
-        int index = find_file(w, path);
-        if (index < 0)
+        seen.insert(path);
+
+        auto it = w.Files.find(path);
+        if (it == w.Files.end())
         {
-            w.Files.push_back({path, writeTime});
-            if (w.OnCreate) w.OnCreate(path);
-            if (w.OnCreateCustom) w.OnCreateCustom(path);
+            w.Files[path] = { writeTime, size };
+
+            std::lock_guard lock(storage.EventMutex);
+            storage.Events.push_back({path, FileEventType::Create });
+            storage.HasPendingEvents = true;
+            storage.LastEventTime = std::chrono::steady_clock::now();
         }
-        else if (w.Files[index].WriteTime != writeTime)
+        else if (it->second.WriteTime != writeTime || it->second.Size != size)
         {
-            w.Files[index].WriteTime = writeTime;
-            if (w.OnModify) w.OnModify(path);
-            if (w.OnModifyCustom) w.OnModifyCustom(path);
+            w.Files[path] = { writeTime, size };
+
+            std::lock_guard lock(storage.EventMutex);
+            storage.Events.push_back({path, FileEventType::Modify });
+            storage.HasPendingEvents = true;
+            storage.LastEventTime = std::chrono::steady_clock::now();
         }
-    }
+
+    }} catch (const std::filesystem::filesystem_error& e) { /* Filesystem error due to race condition, ignore */ }
 
     // Check for deleted files
-    for (size_t i = 0; i < w.Files.size(); )
+    for (auto it = w.Files.begin(); it != w.Files.end(); )
     {
-        if (!std::filesystem::exists(w.Files[i].Path))
+        if (!seen.contains(it->first))
         {
-            std::string deletedFile = w.Files[i].Path;
-            w.Files[i] = w.Files.back();
-            w.Files.pop_back();
-            if (w.OnDelete) w.OnDelete(deletedFile);
-            if (w.OnDeleteCustom) w.OnDeleteCustom(deletedFile);
+            std::lock_guard lock(storage.EventMutex);
+            storage.Events.push_back({it->first, FileEventType::Delete });
+            storage.HasPendingEvents = true;
+            storage.LastEventTime = std::chrono::steady_clock::now();
+
+            it = w.Files.erase(it);
         }
         else
         {
-            i++;
+            ++it;
         }
     }
 }
 
-void watcher_thread(DirectoryWatcher* w)
+void fswatcher_worker_thread(DirectoryWatcherStorage* storage)
 {
-    while (w->Running)
+    while (storage->Running)
     {
-        poll_watcher(*w);
-        std::this_thread::sleep_for(std::chrono::milliseconds(w->IntervalMs));
+        for (auto& [path, watcher] : storage->Watchers)
+        {
+            if (watcher->Running)
+                fswatcher_poll_watcher(*watcher, *storage);
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }}
+
+void fswatcher_start_storage(DirectoryWatcherStorage& storage)
+{
+    storage.Running = true;
+    storage.Worker = std::thread(fswatcher_worker_thread, &storage);
+}
+
+void fswatcher_stop_storage(DirectoryWatcherStorage& storage)
+{
+    storage.Running = false;
+    for (auto& [path, watcher] : storage.Watchers)
+        watcher->Running = false;
+
+    if (storage.Worker.joinable())
+        storage.Worker.join();
+}
+
+void fswatcher_add_watcher(DirectoryWatcherStorage& storage, const std::filesystem::path& dir, bool recursive, int intervalMS)
+{
+    auto watcher = std::make_unique<DirectoryWatcher>();
+    watcher->Directory = dir;
+    watcher->IntervalMs = intervalMS;
+    watcher->Running = true;
+
+    storage.Watchers[dir] = std::move(watcher);
+
+    if (recursive)
+    {
+        for (auto& entry : std::filesystem::recursive_directory_iterator(dir))
+        {
+            if (!entry.is_directory())
+                continue;
+
+            auto watcher = std::make_unique<DirectoryWatcher>();
+            watcher->Directory = entry.path();
+            watcher->IntervalMs = intervalMS;
+            watcher->Running = true;
+
+            storage.Watchers[entry.path()] = std::move(watcher);
+        }
     }
 }
 
-void start_watcher(DirectoryWatcher& w, const std::filesystem::path& dir, int intervalMs)
+void fswatcher_dispatch_events(DirectoryWatcherStorage& storage)
 {
-    w.Directory = dir;
-    w.IntervalMs = intervalMs;
-    w.Running = true;
-
-    // Initial scan
-    for (auto& entry : std::filesystem::directory_iterator(dir))
+    std::vector<FileEvent> events;
     {
-        if (!std::filesystem::is_regular_file(entry)) continue;
-        w.Files.push_back({entry.path().string(), std::filesystem::last_write_time(entry)});
+        std::lock_guard lock(storage.EventMutex);
+        events.swap(storage.Events);
+        storage.HasPendingEvents = false;
     }
 
-    // Launch worker thread
-    w.Worker = std::thread(watcher_thread, &w);
+    for (auto& e : events)
+    {
+        if (storage.EventCallback)
+        {
+            if (!strs_n_equal(e.Path.extension().string(), { ".c", ".cpp", ".h", ".hpp" }))
+                continue;
+
+
+            if (e.Path.extension().string().find("~") != std::string::npos)
+                continue;
+
+            std::filesystem::path retrievedPath = storage.EventCallback(e.Type, e.Path);
+
+            bool found = false;
+
+            for (auto& path : storage.UpdatedFiles)
+            {
+                std::filesystem::path extensionLessPath = path; extensionLessPath.replace_extension("");
+                std::filesystem::path extensionLessRetrievedPath = retrievedPath; extensionLessRetrievedPath.replace_extension("");
+
+                if (extensionLessRetrievedPath == extensionLessPath)
+                    found = true;
+            }
+
+            if (!found)
+                storage.UpdatedFiles.push_back(retrievedPath);
+        }
+    }
 }
 
-void stop_watcher(DirectoryWatcher& w)
+bool fswatcher_should_dispatch_events(DirectoryWatcherStorage& storage, std::chrono::milliseconds debounceTime)
 {
-    w.Running = false;
-    if (w.Worker.joinable())
-        w.Worker.join();
+    if (!storage.HasPendingEvents) return false;
+
+    auto now = std::chrono::steady_clock::now();
+    return (now - storage.LastEventTime) >= debounceTime;
+}
+
+void fswatcher_update_file_events(DirectoryWatcherStorage& storage)
+{
+    if (!fswatcher_should_dispatch_events(storage))
+        return;
+
+    fswatcher_dispatch_events(storage);
 }

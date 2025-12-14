@@ -40,7 +40,6 @@ namespace DLL
         printf("%d + %d = %d\n", a, b, Add(a, b));
     }
 
-
     Test* Test::Create()
     {
         Test* test = new Test();

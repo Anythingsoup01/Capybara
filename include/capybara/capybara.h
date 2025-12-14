@@ -121,18 +121,18 @@ void capy_add_internal_call(const std::string& name, void* functionSymbol);
 // users to do certain type conversions needed for classes / structs
 void capy_add_type_setter(const std::string& name, FieldSetterFunc setter);
 
-// This function will let you provide extra functionality to the
-// File Watcher On Create callback
-void capy_jit_set_fw_on_create(FileCallback callback);
-
-// This function will let you provide extra functionality to the
-// File Watcher On Modify callback
-void capy_jit_set_fw_on_modify(FileCallback callback);
-
-// This function will let you provide extra functionality to the
-// File Watcher On Delete callback
-void capy_jit_set_fw_on_delete(FileCallback callback);
+// This function lets you create a custom callback to handle
+// the given file system events:
+//      FileEventType::Create
+//      FileEventType::Modify
+//      FileEventType::Delete
+// This should return the std::filesystem::path variable if the file is
+// one that should be compiled.
+void capy_jit_set_fs_event_callback(FileEventCallback callback);
 
 // This function is to retrieve the active domain, which stores
 // all the data for loaded classes, methods, and fields
 CapyDomain* capy_get_root_domain();
+
+
+void capy_jit_update_fs_event_watcher();

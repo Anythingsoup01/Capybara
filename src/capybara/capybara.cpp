@@ -101,9 +101,9 @@ static void jit_worker()
         {
             std::lock_guard<std::mutex> lock(jit.JitMutex);
 
-            if (!jit.PendingFiles.empty())
+            if (!jit.WatcherStorage.UpdatedFiles.empty())
             {
-                jit.FilesToCompile.swap(jit.PendingFiles);
+                jit.FilesToCompile.swap(jit.WatcherStorage.UpdatedFiles);
                 hasWork = true;
             }
         } 
@@ -166,6 +166,8 @@ CapyDomain* capy_jit_init()
     jit.JitRunning = true;
     jit.JitThread = std::thread(jit_worker);
 
+    fswatcher_start_storage(jit.WatcherStorage);
+
     return cd;
 }
 
@@ -181,7 +183,9 @@ void capy_jit_shutdown()
             jit.JitThread.join();
     }
 
-    jit.FileWatchers.clear();
+    jit.WatcherStorage.Watchers.clear();
+    if (jit.WatcherStorage.Worker.joinable())
+        jit.WatcherStorage.Worker.join();
 
     {
         std::lock_guard<std::mutex> lock(jit.JitMutex);
@@ -266,39 +270,7 @@ void capy_jit_set_core_bin_include_path(const std::filesystem::path &includePath
 void capy_jit_set_source_path(const std::filesystem::path& sourcePath, bool recursive)
 {
     auto& jit = s_Storage.Active.JITStorage;
-    std::vector<std::unique_ptr<DirectoryWatcher>> watchers;
-
-    auto w = std::make_unique<DirectoryWatcher>();
-    w->OnCreate = fswatcher_on_create;
-    w->OnCreateCustom = jit.FileWatcherOnCreate;
-    w->OnModify = fswatcher_on_modified;
-    w->OnModifyCustom = jit.FileWatcherOnModify;
-    w->OnDelete = fswatcher_on_deleted;
-    w->OnDeleteCustom = jit.FileWatcherOnDelete;
-    start_watcher(*w, sourcePath, 10);
-    watchers.push_back(std::move(w));
-
-    if (recursive)
-    {
-        for (auto& entry : std::filesystem::recursive_directory_iterator(sourcePath))
-        {
-            if (entry.is_directory())
-            {
-                auto w = std::make_unique<DirectoryWatcher>();
-                w->OnCreate = fswatcher_on_create;
-                w->OnCreateCustom = jit.FileWatcherOnCreate;
-                w->OnModify = fswatcher_on_modified;
-                w->OnModifyCustom = jit.FileWatcherOnModify;
-                w->OnDelete = fswatcher_on_deleted;
-                w->OnDeleteCustom = jit.FileWatcherOnDelete;
-                start_watcher(*w, entry.path().string(), 10);
-                watchers.push_back(std::move(w));
-            }
-        }
-    }
-
-
-    jit.FileWatchers = std::move(watchers);
+    fswatcher_add_watcher(jit.WatcherStorage, sourcePath, recursive);
 }
 
 void capy_set_ignored_namespace(const std::vector<std::string>& ignoredNamespace)
@@ -595,10 +567,6 @@ CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath)
     }
 
 
-    if (s_Storage.Config.BinaryPath.empty())
-        s_Storage.Config.BinaryPath = std::filesystem::current_path();
-
-
 
     int fd = open(binPath.c_str(), O_RDONLY);
     if (fd < 0)
@@ -733,8 +701,20 @@ CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath)
     library->SymbolInstance = std::move(instance);
     library->IsCore = true;
 
+    auto& binaryPaths = s_Storage.Active.JITStorage.CoreBinaryPaths;
     cd->CoreLibraries.push_back(binPath.filename().c_str());
-    s_Storage.Active.JITStorage.CoreBinaryPaths.push_back(binPath);
+    bool found = false;
+    for (auto& path : binaryPaths)
+    {
+        if (path == binPath)
+        {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found)
+        binaryPaths.push_back(binPath);
 
     cd->Libraries[libHash] = std::move(library);
 
@@ -986,37 +966,9 @@ void capy_add_type_setter(const std::string& name, FieldSetterFunc setter)
     s_Storage.Active.TypeSetters[setterHash] = setter;
 }
 
-void capy_jit_set_fw_on_create(FileCallback callback)
+void capy_jit_set_fs_event_callback(FileEventCallback callback)
 {
-    auto& jit = s_Storage.Active.JITStorage;
-    for (auto& fw : jit.FileWatchers)
-    {
-        fw->OnCreateCustom = callback;
-    }
-
-    jit.FileWatcherOnCreate = callback;
-}
-
-void capy_jit_set_fw_on_modify(FileCallback callback)
-{
-    auto& jit = s_Storage.Active.JITStorage;
-    for (auto& fw : jit.FileWatchers)
-    {
-        fw->OnModifyCustom = callback;
-    }
-
-    jit.FileWatcherOnModify = callback;
-}
-
-void capy_jit_set_fw_on_delete(FileCallback callback)
-{
-    auto& jit = s_Storage.Active.JITStorage;
-    for (auto& fw : jit.FileWatchers)
-    {
-        fw->OnDeleteCustom = callback;
-    }
-
-    jit.FileWatcherOnDelete = callback;
+    s_Storage.Active.JITStorage.WatcherStorage.EventCallback = callback;
 }
 
 CapyDomain* capy_get_root_domain()
@@ -1031,3 +983,7 @@ CapyDomain* capy_get_root_domain()
     return cd;
 }
 
+void capy_jit_update_fs_event_watcher()
+{
+    fswatcher_update_file_events(s_Storage.Active.JITStorage.WatcherStorage);
+}

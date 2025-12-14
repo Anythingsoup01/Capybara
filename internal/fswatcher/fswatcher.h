@@ -6,46 +6,73 @@
 // This stores simple file data, i.e. Path and Last Write Time
 struct WatchedFile
 {
-    std::filesystem::path Path;
     std::filesystem::file_time_type WriteTime;
+    uintmax_t Size;
 };
 
+enum class FileEventType
+{
+    None = 0,
+    Create,
+    Modify,
+    Delete,
+};
+
+struct DirectoryWatcherStorage;
+struct DirectoryWatcher;
+
+struct FileEvent
+{
+    std::filesystem::path Path;
+    FileEventType Type;
+};
+
+using FileMap = std::unordered_map<std::filesystem::path, WatchedFile>;
+
 // Callback Types
-using FileCallback = std::function<void(const std::filesystem::path&)>;
+using FileEventCallback = std::function<std::filesystem::path(FileEventType type, const std::filesystem::path&)>;
+
 
 struct DirectoryWatcher
 {
     std::filesystem::path Directory;
-    std::vector<WatchedFile> Files;
-    // This is set up as a vector for when we pause
-    // file compilation
-    std::vector<WatchedFile> UpdatedFiles;
-    int IntervalMs;
-    std::atomic<bool> Running;
-    std::thread Worker;
+    FileMap Files;
 
-    // Default Callbacks
-    FileCallback OnCreate = nullptr;
-    FileCallback OnModify = nullptr;
-    FileCallback OnDelete = nullptr;
+    int IntervalMs = 200;
 
-    FileCallback OnCreateCustom = nullptr;
-    FileCallback OnModifyCustom = nullptr;
-    FileCallback OnDeleteCustom = nullptr;
+    std::atomic<bool> Running{false};
 };
 
-// This is a helper function that helps index of a file
-int find_file(const DirectoryWatcher& w, const std::string& path);
+struct DirectoryWatcherStorage
+{
+    std::unordered_map<std::filesystem::path, std::unique_ptr<DirectoryWatcher>> Watchers;
 
-// This function will poll the given directory for
-// new files, updated files, and deleted files
-void poll_watcher(DirectoryWatcher& w);
+    std::vector<FileEvent> Events;
 
-// This function is used to update the worker thread
-void worker_thread(DirectoryWatcher* w);
+    std::vector<std::filesystem::path> UpdatedFiles;
 
-// This function is used to start a new DirectoryWatcher
-void start_watcher(DirectoryWatcher& w, const std::filesystem::path& dir, int intervalMs = 200);
+    std::mutex EventMutex;
 
-// This function is used to stop a DirectoryWatcher, killing the thread
-void stop_watcher(DirectoryWatcher& w);
+    std::atomic<bool> Running{false};
+    std::thread Worker;
+
+    FileEventCallback EventCallback = nullptr;
+    
+    std::chrono::steady_clock::time_point LastEventTime;
+    bool HasPendingEvents = false;
+};
+
+void fswatcher_poll_watcher(DirectoryWatcher& w, DirectoryWatcherStorage& storage);
+
+void fswatcher_worker_thread(DirectoryWatcherStorage* storage);
+
+void fswatcher_start_storage(DirectoryWatcherStorage& storage);
+
+void fswatcher_stop_storage(DirectoryWatcherStorage& storage);
+
+void fswatcher_add_watcher(DirectoryWatcherStorage& storage, const std::filesystem::path& dir, bool recursive = false, int intervalMS = 200);
+
+bool fswatcher_should_dispatch_events(DirectoryWatcherStorage& storage, std::chrono::milliseconds debounceTime = std::chrono::milliseconds(150));
+
+void fswatcher_update_file_events(DirectoryWatcherStorage& storage);
+

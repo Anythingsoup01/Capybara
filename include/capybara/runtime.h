@@ -224,11 +224,7 @@ using FieldSetterFunc = void(*)(void* ptr, void* value);
 
 struct CapyJITStorage
 {
-    std::vector<std::unique_ptr<DirectoryWatcher>> FileWatchers;
-
-    FileCallback FileWatcherOnCreate;
-    FileCallback FileWatcherOnDelete;
-    FileCallback FileWatcherOnModify;
+    DirectoryWatcherStorage WatcherStorage;
 
     std::mutex JitMutex;
     std::vector<std::filesystem::path> PendingFiles;

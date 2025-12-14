@@ -40,17 +40,40 @@ int Internal_Add(int a, int b)
     return a + b;
 }
 
+std::filesystem::path CustomFileEventCallback(FileEventType type, const std::filesystem::path& path)
+{
+
+    switch (type)
+    {
+        case FileEventType::Create:
+            std::cout << "CREATED FILE: " << path.filename().string() << "\n";
+            break;
+        case FileEventType::Modify:
+            std::cout << "MODIFIED FILE: " << path.filename().string() << "\n";
+            break;
+        case FileEventType::Delete:
+            std::cout << "DELETED FILE: " << path.filename().string() << "\n";
+            break;
+    }
+
+    return path;
+}
 
 
 int main(int argc, char** argv) 
 {
+    auto* cd = capy_jit_init();
+
     capy_jit_set_source_path("test/dll/Test", true);
+
     capy_jit_set_binary_path("test/dll/Test/build");
+
     capy_jit_set_core_bin_include_path("test/dll/Base");
+
+    capy_jit_set_fs_event_callback(CustomFileEventCallback);
 
     capy_set_ignored_classname({"IgnoreThis"});
 
-    auto* cd = capy_jit_init();
 
     capy_domain_core_library_open("build/test/dll/Base/libbase-class.so");
 
@@ -58,6 +81,8 @@ int main(int argc, char** argv)
 
     while (true) 
     {
+        capy_jit_update_fs_event_watcher();
+
         if (capy_jit_poll())
         {
             std::cout << capy_dump_domain();
