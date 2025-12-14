@@ -139,7 +139,7 @@ void fswatcher_dispatch_events(DirectoryWatcherStorage& storage)
     {
         if (storage.EventCallback)
         {
-            if (!strs_n_equal(e.Path.extension().string(), { ".c", ".cpp", ".h", ".hpp" }))
+            if (!str_n_equal_length_check(e.Path.extension().string(), { ".c", ".cpp", ".h", ".hpp" }))
                 continue;
 
 
