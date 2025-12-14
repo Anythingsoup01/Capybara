@@ -1019,12 +1019,13 @@ void capy_jit_set_fw_on_delete(FileCallback callback)
     jit.FileWatcherOnDelete = callback;
 }
 
-CapyDomain* capy_get_domain()
+CapyDomain* capy_get_root_domain()
 {
     auto* cd = s_Storage.Active.Runtime.get();
     if (!cd)
     {
         std::cerr << "ERROR: Domain not set!\nBe sure to call capy_jit_init!\n";
+        return nullptr;
     }
 
     return cd;

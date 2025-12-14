@@ -132,3 +132,7 @@ void capy_jit_set_fw_on_modify(FileCallback callback);
 // This function will let you provide extra functionality to the
 // File Watcher On Delete callback
 void capy_jit_set_fw_on_delete(FileCallback callback);
+
+// This function is to retrieve the active domain, which stores
+// all the data for loaded classes, methods, and fields
+CapyDomain* capy_get_root_domain();
