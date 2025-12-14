@@ -14,7 +14,6 @@ set(SRCS
     "src/util/cxxabi_util.cpp"
     "src/capybara/runtime.cpp"
     "src/capybara/capybara.cpp"
-    "src/jit/jit.cpp"
     "include/capybara/capybara.h"
     "include/capybara/runtime.h"
     "internal/fswatcher/fswatcher.h"

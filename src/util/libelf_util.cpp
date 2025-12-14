@@ -61,8 +61,7 @@ std::string get_return_type(const dwarf::die& die)
 
 void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_stack, RuntimeStorage& storage, std::vector<_SymbolMetaData>& outSymbols)
 {
-    auto& cfg = storage.ConfigStorage;
-    auto& capyStorage = storage.Storage;
+    auto& cfg = storage.Config;
     std::string name = get_short_name(d);
 
     // Keep track of scopes
@@ -272,7 +271,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         scope_stack.pop_back();
 }
 
-std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vector<_SymbolMetaData>& symbols, CapyStorage& storage)
+std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vector<_SymbolMetaData>& symbols, CapyActiveDomain& storage)
 {
     std::unordered_map<std::string, std::string> symbolNames;
     for (auto &sec : ef.sections())

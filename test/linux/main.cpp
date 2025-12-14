@@ -2,8 +2,6 @@
 #include <capybara/capybara.h>
 #include <capybara/runtime.h>
 
-#include <jit/jit.h>
-
 #include <iostream>
 
 #include <dlfcn.h>
@@ -48,21 +46,21 @@ int main(int argc, char** argv)
 {
     capy_jit_set_source_path("test/dll/Test", true);
     capy_jit_set_binary_path("test/dll/Test/build");
+    capy_jit_set_core_bin_include_path("test/dll/Base");
 
     capy_set_ignored_classname({"IgnoreThis"});
 
-    auto* cd = capy_jit_init("Expansion");
+    auto* cd = capy_jit_init();
 
+    capy_domain_core_library_open("build/test/dll/Base/libbase-class.so");
 
-    std::cout << cd << "\n";
-
-    capy_jit_add_core_library("test/dll/Base", "build/test/dll/Base/libbase-class.so");
+    capy_reload_libraries_into_domain();
 
     while (true) 
     {
         if (capy_jit_poll())
         {
-            std::cout << capy_dump_domain("Expansion");
+            std::cout << capy_dump_domain();
         }
     }
 
@@ -99,7 +97,7 @@ int main(int argc, char** argv)
 
     std::cout << capy_dump_domain("Expansion");
 #   endif
-    capy_unload_domain("Expansion");
+    capy_jit_shutdown();
 
     return 0;
 }

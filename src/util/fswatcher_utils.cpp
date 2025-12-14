@@ -25,8 +25,8 @@ void fswatcher_on_create(const std::filesystem::path& path)
     if (!check_if_supported_extension(path))
         return;
 
-    std::lock_guard<std::mutex> lock(s_Storage.JITStorage.PendingFileMutex);
-    s_Storage.JITStorage.PendingFiles.push_back(path);
+    std::lock_guard<std::mutex> lock(s_Storage.Active.JITStorage.JitMutex);
+    s_Storage.Active.JITStorage.PendingFiles.push_back(path);
 }
 
 void fswatcher_on_modified(const std::filesystem::path& path)
@@ -34,9 +34,8 @@ void fswatcher_on_modified(const std::filesystem::path& path)
     if (!check_if_supported_extension(path))
         return;
 
-    std::lock_guard<std::mutex> lock(s_Storage.JITStorage.PendingFileMutex);
-    s_Storage.JITStorage.PendingFiles.push_back(path);
-
+    std::lock_guard<std::mutex> lock(s_Storage.Active.JITStorage.JitMutex);
+    s_Storage.Active.JITStorage.PendingFiles.push_back(path);
 }
 
 void fswatcher_on_deleted(const std::filesystem::path& path)

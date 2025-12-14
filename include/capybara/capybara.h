@@ -2,19 +2,39 @@
 
 #include "runtime.h"
 
-// This function initializes our strorage, calling init basically
-// just clears the storage and sets default values.
-void capy_init();
-
-/*
- *  Shutdown Capybara, used to free all loaded libraries
- */
-void capy_shutdown();
-
-// This function let's the user set a default search path for libraries
+// This will initialize a CapyDomain that will utilize
+// a custom JIT implementation for hot reloading and
+// compiling files
 //
-// Setting this will also tell JIT where to store binaries when compiled
-void capy_set_libraries_path(const std::filesystem::path& libPath);
+// This also applies any ignored names/class names/ namespaces
+CapyDomain* capy_jit_init();
+
+// This function clears all the storage and shutdown JIT
+void capy_jit_shutdown();
+
+// This function checks internally if files need compiled
+// blocking this with a bool can delay compilation
+bool capy_jit_poll();
+
+// This functions will set a directory that will automatically be searched
+// for any file changes pertaining to .c, .cpp, .h, .hpp files and dynamically
+//
+// Setting recursive will set a listener in sub-directories, this can and
+// will flood a debugger with processes
+//
+// The event listener will trigger a compilations, which can be delayed with
+// capy_pause_compilation(true / false)
+//
+// There can only be one parent directory set
+void capy_jit_set_source_path(const std::filesystem::path& sourcePath, bool recursive);
+
+// This function sets the default search path for binaries along with
+// where JIT will compile them to
+void capy_jit_set_binary_path(const std::filesystem::path& binaryPath);
+
+// This function sets the include path for you core binary / binaries
+// there can only be one, so core binaries must be stored together
+void capy_jit_set_core_bin_include_path(const std::filesystem::path& includePath);
 
 // This function lets you specify a namespace you want to ignore,
 // narrowing down any extra namespaces you want to get rid of,
@@ -31,52 +51,34 @@ void capy_set_ignore_empty_namespace(bool active);
 // between the namespace and classname portion of our symbols
 void capy_set_ignored_classname(const std::vector<std::string>& ignoredClassnames);
 
-// This function will initialize a new domain, if it exists already it'll
-// return nullptr for memory security
-//
-// Marking isRoot true will treat this domain as a root domain, when initializing
-// any other domain with isRoot set to false will copy the root domain into the
-// new domain. This allows for seamless hot reloading if you set up your own
-// JIT compiler, however using capy_jit_init, avaliable by including
-// jit/jit.h from capy, will allow you to set this up easily and is recommended.
-CapyDomain* capy_init_domain(const std::string& name);
-
 // This function is used to unload a domain and all it's libraries
 // by using the domain's name as opposed to it's hash value
-void capy_unload_domain(const std::string& domainName);
-
-// This function is used to unload a domain and all it's libraries
-// by using it's hash value
-void capy_unload_domain(const uint32_t& domainHash);
+void capy_reload_domain();
 
 // This is a utility function that dumps the contents of a given domain
 // returns a string that can be printed normally or with a logging system
-std::string capy_dump_domain(const std::string& domainName);
+std::string capy_dump_domain();
 
 // This function is combined with the default search path to look in a
 // given directory and get every library, for accurate information
 // capy_unload_domain(domain*) should be called to clear the domains
 // and a new domain should be created before trying to load libraries
-void capy_reload_libraries_into_domain(CapyDomain* cd);
+void capy_reload_libraries_into_domain();
 
-// This function is used to load libraries, used primarily by the
-// capy_reload_libraries_into_domain function to emplace libraries,
-// if the user want's to use a library not in the path, providing the
-// path should allow the user to open it anyways due to a fallback system
-// in place.
-//
-// If a library is intended to be a Core Library, you must call this function
-// before capy_reload_libraries_into_domain, otherwise it's not going to work.
-//
-// Marking isCore as true will push it's complete file name into a list,
-// the list can be pulled from capy_get_core_libraries_from_domain,
-// which returns a vector of strings.
-CapyLibrary* capy_domain_library_open(CapyDomain* cd, const std::string& libName, bool isCore);
+// This function is used to open non-core libraries
+// if you want to add a core library use
+// capy_domain_core_library_open instead
+CapyLibrary* capy_domain_library_open(const std::string& binName);
+
+// This function is used to open core libraries, core libraries
+// get stored in the storage and get linked to all libraries when
+// recompiled
+CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath);
 
 // This function lets you retrieve a vector of library names that were marked as core,
 // this is useful for making a runtime that needs base classes, I.e. MonoBehavior (for C#),
 // to be linked across multiple libraries.
-std::vector<std::string> capy_get_core_libraries_from_domain(const std::string& domainName);
+std::vector<std::string> capy_get_core_libraries_from_domain();
 
 // This function is used to get the image of a given library
 CapyImage* capy_library_get_image(CapyLibrary* cl);
@@ -118,3 +120,15 @@ void capy_add_internal_call(const std::string& name, void* functionSymbol);
 // This function let's the user define a specific setter for a type, this allows
 // users to do certain type conversions needed for classes / structs
 void capy_add_type_setter(const std::string& name, FieldSetterFunc setter);
+
+// This function will let you provide extra functionality to the
+// File Watcher On Create callback
+void capy_jit_set_fw_on_create(FileCallback callback);
+
+// This function will let you provide extra functionality to the
+// File Watcher On Modify callback
+void capy_jit_set_fw_on_modify(FileCallback callback);
+
+// This function will let you provide extra functionality to the
+// File Watcher On Delete callback
+void capy_jit_set_fw_on_delete(FileCallback callback);

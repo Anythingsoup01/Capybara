@@ -117,17 +117,6 @@ struct CapyField
         DefaultData{},                      // zero initialize RuntimeValue
         SymbolMetaData{}                    // uses its own default ctor
     {}
-
-    CapyField(const CapyField& other)
-    {
-        SymHandle        = other.SymHandle;
-        FieldType        = other.FieldType;
-        Offset           = other.Offset;
-        ClassMember      = other.ClassMember;
-        FieldTypeString  = other.FieldTypeString;
-        DefaultData      = other.DefaultData;     // assumes trivial
-        SymbolMetaData   = other.SymbolMetaData;  // assumes trivial/deep copyable
-    }
 };
 
 struct CapyMethod
@@ -148,16 +137,6 @@ struct CapyMethod
         ClassMember(false),
         SymbolMetaData{}
     {}
-
-    CapyMethod(const CapyMethod& other)
-    {
-        SymHandle             = other.SymHandle;
-        ReturnType            = other.ReturnType;
-        Parameters            = other.Parameters;
-        ParameterTypeStrings  = other.ParameterTypeStrings;
-        ClassMember           = other.ClassMember;
-        SymbolMetaData        = other.SymbolMetaData;
-    }
 };
 
 struct CapyVTable
@@ -169,21 +148,6 @@ struct CapyVTable
         : Methods(),
         Fields()
     {}
-
-    CapyVTable(const CapyVTable& other)
-    {
-        // Copy methods
-        for (const auto& [id, methodPtr] : other.Methods)
-        {
-            Methods[id] = std::make_unique<CapyMethod>(*methodPtr);
-        }
-
-        // Copy fields
-        for (const auto& [id, fieldPtr] : other.Fields)
-        {
-            Fields[id] = std::make_unique<CapyField>(*fieldPtr);
-        }
-    }
 };
 
 struct CapyClass
@@ -201,15 +165,6 @@ struct CapyClass
         VTable(nullptr),
         Parent(nullptr)
     {}
-
-    CapyClass(const CapyClass& other)
-        : NameSpace(other.NameSpace),
-        ClassName(other.ClassName),
-        Parent(other.Parent)
-    {
-        if (other.VTable)
-            VTable = std::make_unique<CapyVTable>(*other.VTable);
-    }
 };
 
 struct CapyImage {
@@ -218,14 +173,6 @@ struct CapyImage {
     CapyImage()
         : Classes()
     {}
-
-    CapyImage(const CapyImage& other)
-    {
-        for (const auto& [id, classPtr] : other.Classes)
-        {
-            Classes[id] = std::make_unique<CapyClass>(*classPtr);
-        }
-    }
 };
 
 struct CapyLibrary {
@@ -251,17 +198,6 @@ struct CapyLibrary {
     CapyLibrary(std::unique_ptr<CapyImage> image)
         : Image(std::move(image)) {}
 
-    CapyLibrary(const CapyLibrary& other)
-        : Name(other.Name),
-        LibPath(other.LibPath),
-        SymbolInstance(other.SymbolInstance),
-        IsCore(other.IsCore),
-        OriginalRelocs(other.OriginalRelocs)
-    {
-        if (other.Image)
-            Image = std::make_unique<CapyImage>(*other.Image);
-    }
-
     ~CapyLibrary()
     {
         if (SymbolInstance)
@@ -277,15 +213,6 @@ struct CapyDomain {
         : Libraries(),
         CoreLibraries()
     {}
-
-    CapyDomain(const CapyDomain& other)
-        : CoreLibraries(other.CoreLibraries)
-    {
-        for (const auto& [id, libPtr] : other.Libraries)
-        {
-            Libraries[id] = std::make_unique<CapyLibrary>(*libPtr);
-        }
-    }
 };
 
 // TODO: Delete this if not needed
@@ -294,42 +221,34 @@ struct capy_type_list {};
 
 using FieldSetterFunc = void(*)(void* ptr, void* value);
 
-struct CapyStorage {
-    std::unordered_map<uint32_t, std::unique_ptr<CapyDomain>> Domains;
-    std::unordered_map<uint32_t, void*> InternalCalls;
-    std::unordered_map<uint32_t, FieldSetterFunc> TypeSetters;
-
-
-
-};
 
 struct CapyJITStorage
 {
     std::vector<std::unique_ptr<DirectoryWatcher>> FileWatchers;
+
     FileCallback FileWatcherOnCreate;
     FileCallback FileWatcherOnDelete;
     FileCallback FileWatcherOnModify;
 
-    std::mutex PendingFileMutex;
+    std::mutex JitMutex;
     std::vector<std::filesystem::path> PendingFiles;
-
     std::vector<std::filesystem::path> FilesToCompile;
     std::vector<std::string> CompilationCommands;
 
-    std::atomic<bool> JitCompilationNeeded;
-    std::mutex CompilationMutex;
-    
-    std::atomic<bool> JitRunning = false;
+    std::atomic<bool> JitCompilationNeeded{false};
+    std::atomic<bool> JitRunning{false};
     std::thread JitThread;
 
-    uint32_t JitDomainHash;
-    CapyDomain* JitDomain = nullptr;
-    std::string DomainName;
-
-    std::vector<std::filesystem::path> CorePaths;
+    std::filesystem::path CorePath;
     std::vector<std::filesystem::path> CoreBinaryPaths;
+};
 
-    std::filesystem::path BinaryPath;
+struct CapyActiveDomain {
+    std::unique_ptr<CapyDomain> Runtime;
+    CapyJITStorage JITStorage;
+
+    std::unordered_map<uint32_t, void*> InternalCalls;
+    std::unordered_map<uint32_t, FieldSetterFunc> TypeSetters;
 };
 
 struct CapyConfigStorage
@@ -340,16 +259,13 @@ struct CapyConfigStorage
     std::vector<std::string> IgnoredNamespaces;
     std::vector<std::string> IgnoredClassNames;
     std::vector<std::string> IgnoredNames;
-
     std::filesystem::path BinaryPath;
 };
 
 struct RuntimeStorage
 {
-    CapyStorage Storage;
-    CapyJITStorage JITStorage;
-
-    CapyConfigStorage ConfigStorage;
+    CapyActiveDomain Active;
+    CapyConfigStorage Config;
 };
 
 extern RuntimeStorage s_Storage;
