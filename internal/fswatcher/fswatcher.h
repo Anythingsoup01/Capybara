@@ -60,6 +60,7 @@ struct DirectoryWatcherStorage
     
     std::chrono::steady_clock::time_point LastEventTime;
     bool HasPendingEvents = false;
+    bool IgnoreHiddenPaths = false;
 };
 
 void fswatcher_poll_watcher(DirectoryWatcher& w, DirectoryWatcherStorage& storage);

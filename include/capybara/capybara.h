@@ -136,3 +136,5 @@ CapyDomain* capy_get_root_domain();
 
 
 void capy_jit_update_fs_event_watcher();
+
+void capy_jit_set_ignore_hidden_paths(bool active);

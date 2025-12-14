@@ -107,6 +107,15 @@ void fswatcher_add_watcher(DirectoryWatcherStorage& storage, const std::filesyst
             if (!entry.is_directory())
                 continue;
 
+            if (storage.IgnoreHiddenPaths)
+            {
+                std::string name = entry.path().filename().string();
+                // Check if the name starts with a dot and is not just "." or ".."
+                if (name.length() > 0 && name[0] == '.' && name != "." && name != "..") {
+                    continue;
+                }
+            }
+
             auto watcher = std::make_unique<DirectoryWatcher>();
             watcher->Directory = entry.path();
             watcher->IntervalMs = intervalMS;
@@ -136,6 +145,7 @@ void fswatcher_dispatch_events(DirectoryWatcherStorage& storage)
 
             if (e.Path.extension().string().find("~") != std::string::npos)
                 continue;
+
 
             std::filesystem::path retrievedPath = storage.EventCallback(e.Type, e.Path);
 

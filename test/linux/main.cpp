@@ -64,11 +64,13 @@ int main(int argc, char** argv)
 {
     auto* cd = capy_jit_init();
 
+    capy_jit_set_ignore_hidden_paths(true);
     capy_jit_set_source_path("test/dll/Test", true);
 
-    capy_jit_set_binary_path("test/dll/Test/build");
+    capy_jit_set_binary_path("test/dll/Test/.build");
 
     capy_jit_set_core_bin_include_path("test/dll/Base");
+
 
     capy_jit_set_fs_event_callback(CustomFileEventCallback);
 

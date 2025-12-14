@@ -987,3 +987,8 @@ void capy_jit_update_fs_event_watcher()
 {
     fswatcher_update_file_events(s_Storage.Active.JITStorage.WatcherStorage);
 }
+
+void capy_jit_set_ignore_hidden_paths(bool active)
+{
+    s_Storage.Active.JITStorage.WatcherStorage.IgnoreHiddenPaths = active;
+}
