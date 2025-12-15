@@ -226,7 +226,6 @@ bool capy_jit_poll()
 
         for (auto& command : commands)
         {
-            std::cout << command << "\n";
             system(command.c_str());
         }
 
