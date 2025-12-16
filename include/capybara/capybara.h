@@ -122,4 +122,4 @@ void* capy_function_call_from_method(CapyMethod* cm, const std::vector<RuntimeVa
 void capy_add_internal_call(const std::string& name, void* functionSymbol);
 
 // This function let's you create an object instance
-CapyObject capy_instantiate_object(CapyClass* klass);
+CapyObject* capy_instantiate_object(CapyClass* klass);

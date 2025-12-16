@@ -29,13 +29,13 @@ public:
 
         std::vector<RuntimeValue> localCopy = params;
 
-        localCopy.insert(localCopy.begin(), m_ClassObject.Memory);
+        localCopy.insert(localCopy.begin(), m_ClassObject->Memory);
 
 		return capy_function_call_from_method(method, localCopy);
 	}
 
 private:
-    CapyObject m_ClassObject;
+    CapyObject* m_ClassObject;
     CapyClass* m_CapyClass;
 };
 

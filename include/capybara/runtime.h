@@ -207,15 +207,53 @@ struct CapyLibrary {
 
 struct CapyObject
 {
-    void* Memory;
-    CapyClass* Klass;
+    void* Memory = nullptr;
+    CapyClass* Klass = nullptr;
+
+    CapyObject() = default;
+    CapyObject(void* memory, CapyClass* klass)
+        : Memory(memory), Klass(klass) {}
+
+    CapyObject(const CapyObject&) = delete;
+    CapyObject& operator=(const CapyObject&) = delete;
+
+    CapyObject(CapyObject&& other) noexcept
+        : Memory(other.Memory), Klass(other.Klass)
+    {
+        other.Memory = nullptr;
+        other.Klass = nullptr;
+    }
+
+    CapyObject& operator=(CapyObject&& other) noexcept
+    {
+        if (this != &other)
+        {
+            if (Memory)
+                std::free(Memory);
+
+            Memory = other.Memory;
+            Klass = other.Klass;
+            other.Memory = nullptr;
+            other.Klass = nullptr;
+        }
+        return *this;
+    }
+
+    ~CapyObject()
+    {
+        if (Memory)
+            std::free(Memory);
+
+        if (Klass)
+            Klass = nullptr;
+    }
 };
 
 struct CapyDomain {
     std::unordered_map<uint32_t, std::unique_ptr<CapyLibrary>> Libraries;
     std::vector<std::string> CoreLibraries;
 
-    std::vector<CapyObject> LiveObjects;
+    std::vector<std::unique_ptr<CapyObject>> LiveObjects;
 
     CapyDomain()
         : Libraries(),

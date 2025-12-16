@@ -954,21 +954,27 @@ CapyDomain* capy_get_root_domain()
     return cd;
 }
 
-CapyObject capy_instantiate_object(CapyClass* klass)
+CapyObject* capy_instantiate_object(CapyClass* klass)
 {
-    CapyObject obj;
     if (!klass || klass->ClassSize == 0)
-        return obj;
-
-    obj.Klass = klass;
+        return nullptr;
 
     void* mem = std::aligned_alloc(
         klass->Allignment,
         ((klass->ClassSize + klass->Allignment - 1) / klass->Allignment) * klass->Allignment
         );
 
-    memset(mem, 0, klass->ClassSize);
-    obj.Memory = mem;
+    if (!mem)
+        return nullptr;
 
-    return obj;
+    memset(mem, 0, klass->ClassSize);
+    auto obj = std::make_unique<CapyObject>(mem, klass);
+    obj->Klass = klass;
+    obj->Memory = mem;
+
+    CapyObject* raw = obj.get();
+
+    s_Storage.Active.Runtime->LiveObjects.push_back(std::move(obj));
+
+    return raw;
 }
