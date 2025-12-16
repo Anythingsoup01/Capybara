@@ -30,7 +30,7 @@ struct FileEvent
 using FileMap = std::unordered_map<std::filesystem::path, WatchedFile>;
 
 // Callback Types
-using FileEventCallback = std::function<std::filesystem::path(FileEventType type, const std::filesystem::path&)>;
+using FileEventCallback = std::function<void(FileEventType type, const std::filesystem::path&)>;
 
 
 struct DirectoryWatcher

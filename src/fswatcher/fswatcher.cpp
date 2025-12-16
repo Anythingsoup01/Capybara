@@ -92,21 +92,21 @@ void fswatcher_worker_thread(DirectoryWatcherStorage* storage)
                         continue;
 
 
-                    std::filesystem::path retrievedPath = storage->EventCallback(e.Type, e.Path);
+                    storage->EventCallback(e.Type, e.Path);
 
                     bool found = false;
 
                     for (auto& path : storage->UpdatedFiles)
                     {
                         std::filesystem::path extensionLessPath = path; extensionLessPath.replace_extension("");
-                        std::filesystem::path extensionLessRetrievedPath = retrievedPath; extensionLessRetrievedPath.replace_extension("");
+                        std::filesystem::path extensionLessRetrievedPath = e.Path; extensionLessRetrievedPath.replace_extension("");
 
                         if (extensionLessRetrievedPath == extensionLessPath)
                             found = true;
                     }
 
                     if (!found)
-                        storage->UpdatedFiles.push_back(retrievedPath);
+                        storage->UpdatedFiles.push_back(e.Path);
                 }
             }
         }
