@@ -14,8 +14,6 @@ namespace DLL
         void CustomAdd(int a, int b);
 
         void UpdateCheck(int16_t test);
-
-        static Test* Create();
     private:
         const char* m_PreviousMessage;
     };

@@ -157,13 +157,13 @@ struct CapyClass
 
     std::unique_ptr<CapyVTable> VTable;
 
-    CapyClass* Parent;
+    size_t ClassSize = 0;
+    size_t Allignment = 16;
 
     CapyClass()
         : NameSpace(""),
         ClassName(""),
-        VTable(nullptr),
-        Parent(nullptr)
+        VTable(nullptr)
     {}
 };
 
@@ -205,22 +205,29 @@ struct CapyLibrary {
     }
 };
 
+struct CapyObject
+{
+    void* Memory;
+    CapyClass* Klass;
+};
+
 struct CapyDomain {
     std::unordered_map<uint32_t, std::unique_ptr<CapyLibrary>> Libraries;
     std::vector<std::string> CoreLibraries;
 
+    std::vector<CapyObject> LiveObjects;
+
     CapyDomain()
         : Libraries(),
-        CoreLibraries()
+        CoreLibraries(),
+        LiveObjects()
     {}
 };
+
 
 // TODO: Delete this if not needed
 template<typename... Ts>
 struct capy_type_list {};
-
-using FieldSetterFunc = void(*)(void* ptr, void* value);
-
 
 struct CapyJITStorage
 {
@@ -244,7 +251,6 @@ struct CapyActiveDomain {
     CapyJITStorage JITStorage;
 
     std::unordered_map<uint32_t, void*> InternalCalls;
-    std::unordered_map<uint32_t, FieldSetterFunc> TypeSetters;
 };
 
 struct CapyConfigStorage

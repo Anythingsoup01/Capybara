@@ -201,7 +201,6 @@ void capy_jit_shutdown()
     }
 
     active.InternalCalls.clear();
-    active.TypeSetters.clear();
 }
 
 bool capy_jit_poll()
@@ -265,10 +264,11 @@ void capy_jit_set_core_bin_include_path(const std::filesystem::path &includePath
     s_Storage.Active.JITStorage.CorePath = includePath;
 }
 
-void capy_jit_set_source_path(const std::filesystem::path& sourcePath, bool recursive)
+void capy_jit_set_source_path(const std::filesystem::path& sourcePath, FileEventCallback callback, bool recursive)
 {
     auto& jit = s_Storage.Active.JITStorage;
     fswatcher_add_watcher(jit.WatcherStorage, sourcePath, recursive);
+    jit.WatcherStorage.EventCallback = callback;
 }
 
 void capy_set_ignored_namespace(const std::vector<std::string>& ignoredNamespace)
@@ -515,6 +515,7 @@ CapyLibrary* capy_domain_library_open(const std::string& binName)
             field->FieldType = string_to_value_type(sym.ReturnType);
             field->FieldTypeString = sym.ReturnType;
             field->Offset = sym.Offset;
+            klass->ClassSize += sym.Offset;
             field->ClassMember = sym.IsVariable && sym.IsClassInstance;
             field->SymbolMetaData = sym;
             uint32_t fieldHash = generate_hash(sym.Name);
@@ -543,6 +544,7 @@ CapyLibrary* capy_domain_library_open(const std::string& binName)
             klass->VTable->Methods[methodHash] = std::move(method);
         }
     }
+
     image->Classes = std::move(classes);
 
     std::unique_ptr<CapyLibrary> library = std::make_unique<CapyLibrary>(std::move(image));
@@ -837,37 +839,15 @@ void capy_field_data_set(void* instance, CapyField* cf, void* value, int valueSi
     // If you have owner class size in metadata, validate bounds:
     size_t size = type_size(cf->FieldType);
 
-    FieldSetterFunc setter = nullptr;
-
-    // Lookup setter for this type
-    uint32_t fieldSetterHash = generate_hash(cf->FieldTypeString);
-    auto it = storage.TypeSetters.find(fieldSetterHash);
-    if (it != storage.TypeSetters.end())
-        setter = it->second;
 
     if (instance)
     {
         void* ptr = static_cast<char*>(instance) + cf->Offset;
-
-        if (setter)
-        {
-            setter(ptr, value); // use registered type handler
-        }
-        else
-        {
-            memcpy(ptr, value, size); // default memcpy
-        }
+        memcpy(ptr, value, size); // default memcpy
     }
     else
     {
-        if (setter)
-        {
-            setter(cf->DefaultData.raw_ptr(), value);
-        }
-        else
-        {
-            memcpy(cf->DefaultData.raw_ptr(), value, size);
-        }
+        memcpy(cf->DefaultData.raw_ptr(), value, size);
     }
 }
 
@@ -957,13 +937,6 @@ void capy_add_internal_call(const std::string& name, void* functionSymbol)
     }
 }
 
-
-void capy_add_type_setter(const std::string& name, FieldSetterFunc setter)
-{
-    uint32_t setterHash = generate_hash(name);
-    s_Storage.Active.TypeSetters[setterHash] = setter;
-}
-
 void capy_jit_set_fs_event_callback(FileEventCallback callback)
 {
     s_Storage.Active.JITStorage.WatcherStorage.EventCallback = callback;
@@ -981,12 +954,21 @@ CapyDomain* capy_get_root_domain()
     return cd;
 }
 
-void capy_jit_update_fs_event_watcher()
+CapyObject capy_instantiate_object(CapyClass* klass)
 {
-    fswatcher_update_file_events(s_Storage.Active.JITStorage.WatcherStorage);
-}
+    CapyObject obj;
+    if (!klass || klass->ClassSize == 0)
+        return obj;
 
-void capy_jit_set_ignore_hidden_paths(bool active)
-{
-    s_Storage.Active.JITStorage.WatcherStorage.IgnoreHiddenPaths = active;
+    obj.Klass = klass;
+
+    void* mem = std::aligned_alloc(
+        klass->Allignment,
+        ((klass->ClassSize + klass->Allignment - 1) / klass->Allignment) * klass->Allignment
+        );
+
+    memset(mem, 0, klass->ClassSize);
+    obj.Memory = mem;
+
+    return obj;
 }

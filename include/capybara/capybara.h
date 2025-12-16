@@ -9,6 +9,10 @@
 // This also applies any ignored names/class names/ namespaces
 CapyDomain* capy_jit_init();
 
+// This function is to retrieve the active domain, which stores
+// all the data for loaded classes, methods, and fields
+CapyDomain* capy_get_root_domain();
+
 // This function clears all the storage and shutdown JIT
 void capy_jit_shutdown();
 
@@ -26,7 +30,7 @@ bool capy_jit_poll();
 // capy_pause_compilation(true / false)
 //
 // There can only be one parent directory set
-void capy_jit_set_source_path(const std::filesystem::path& sourcePath, bool recursive);
+void capy_jit_set_source_path(const std::filesystem::path& sourcePath, FileEventCallback callback, bool recursive);
 
 // This function sets the default search path for binaries along with
 // where JIT will compile them to
@@ -117,24 +121,5 @@ void* capy_function_call_from_method(CapyMethod* cm, const std::vector<RuntimeVa
 // after loading libraries into the domain
 void capy_add_internal_call(const std::string& name, void* functionSymbol);
 
-// This function let's the user define a specific setter for a type, this allows
-// users to do certain type conversions needed for classes / structs
-void capy_add_type_setter(const std::string& name, FieldSetterFunc setter);
-
-// This function lets you create a custom callback to handle
-// the given file system events:
-//      FileEventType::Create
-//      FileEventType::Modify
-//      FileEventType::Delete
-// This should return the std::filesystem::path variable if the file is
-// one that should be compiled.
-void capy_jit_set_fs_event_callback(FileEventCallback callback);
-
-// This function is to retrieve the active domain, which stores
-// all the data for loaded classes, methods, and fields
-CapyDomain* capy_get_root_domain();
-
-
-void capy_jit_update_fs_event_watcher();
-
-void capy_jit_set_ignore_hidden_paths(bool active);
+// This function let's you create an object instance
+CapyObject capy_instantiate_object(CapyClass* klass);
