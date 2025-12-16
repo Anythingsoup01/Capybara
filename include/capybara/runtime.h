@@ -253,7 +253,7 @@ struct CapyDomain {
     std::unordered_map<uint32_t, std::unique_ptr<CapyLibrary>> Libraries;
     std::vector<std::string> CoreLibraries;
 
-    std::vector<std::unique_ptr<CapyObject>> LiveObjects;
+    std::unordered_map<uint32_t, std::unique_ptr<CapyObject>> LiveObjects;
 
     CapyDomain()
         : Libraries(),

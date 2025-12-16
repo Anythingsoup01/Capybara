@@ -974,7 +974,17 @@ CapyObject* capy_instantiate_object(CapyClass* klass)
 
     CapyObject* raw = obj.get();
 
-    s_Storage.Active.Runtime->LiveObjects.push_back(std::move(obj));
+    std::string fullName;
+    if (!klass->NameSpace.empty() && !klass->ClassName.empty())
+        fullName += klass->NameSpace + "::" + klass->ClassName;
+    else if (!klass->NameSpace.empty())
+        fullName += klass->NameSpace;
+    else if (!klass->ClassName.empty())
+        fullName += klass->ClassName;
+
+    uint32_t classHash = generate_hash(fullName);
+
+    s_Storage.Active.Runtime->LiveObjects[classHash] = std::move(obj);
 
     return raw;
 }
