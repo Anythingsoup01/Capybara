@@ -77,10 +77,15 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         if (strs_n_equal(name, cfg.IgnoredNamespaces))
             return;
     }
-    if ((is_classname || is_structure) && !name.empty())
+    if (is_classname && !name.empty())
     {
         if (strs_n_equal(name, cfg.IgnoredClassNames))
             return;
+    }
+    if (is_structure)
+    {
+        // TODO: IMPLEMENT THIS
+        return;
     }
 
     if (is_scope && !name.empty())

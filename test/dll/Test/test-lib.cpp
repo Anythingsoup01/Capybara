@@ -1,9 +1,9 @@
 #include "test-lib.h"
+#include "base-class.h"
 #include <stdio.h>
 #include <iostream>
 
 #include <dlfcn.h>
-
 
 namespace DLL
 {
@@ -34,6 +34,8 @@ namespace DLL
     {
         printf( "Reprinting : %s\n", m_PreviousMessage);
     }
+
+    void Test::UpdateCheck(int16_t test) {}
 
     void Test::CustomAdd(int a, int b)
     {
