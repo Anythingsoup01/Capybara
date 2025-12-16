@@ -5,7 +5,6 @@
 
 #include <dlfcn.h>
 
-
 namespace DLL
 {
 
@@ -36,16 +35,11 @@ namespace DLL
         printf( "Reprinting : %s\n", m_PreviousMessage);
     }
 
+    void Test::UpdateCheck(int16_t test) {}
+
     void Test::CustomAdd(int a, int b)
     {
         printf("%d + %d = %d\n", a, b, Add(a, b));
-    }
-
-    Test* Test::Create()
-    {
-        Test* test = new Test();
-        std::cout << "Creating a new Test object: " << test << std::endl;
-        return test;
     }
 }
 

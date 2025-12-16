@@ -7,12 +7,14 @@
 #include "capybara/capybara.h"
 #include "capybara/runtime.h"
 
-#include "libelf_util.h"
-#include "ffi_util.h"
+#include "fswatcher/fswatcher.h"
 
+#include "util/libelf_util.h"
+#include "util/ffi_util.h"
 
-static Storage s_Storage;
+#include "util/fswatcher_utils.h"
 
+RuntimeStorage s_Storage;
 
 static void update_symbol_namespaces(std::vector<_SymbolMetaData>& symbols)
 {
@@ -20,7 +22,7 @@ static void update_symbol_namespaces(std::vector<_SymbolMetaData>& symbols)
     {
         std::string& NameSpace = sym.Namespace;
         //std::cout << "NAMESPACE: " << NameSpace << "::" << sym.Name << "\n";
-        for (auto& knownName : s_Storage.KnownClassNames)
+        for (auto& knownName : s_Storage.Config.KnownClassNames)
         {
             size_t foundName = NameSpace.rfind(knownName);
             if (foundName != std::string::npos)
@@ -39,99 +41,288 @@ static void update_symbol_namespaces(std::vector<_SymbolMetaData>& symbols)
     }
 }
 
+static std::vector<std::string> s_IGNORED_NAMESPACES = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" };
+static std::vector<std::string> s_IGNORED_CLASSNAMES = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_", "__pthread", "timespec", "lconv", "_M_" };
+static std::vector<std::string> s_IGNORED_NAMES = { "<anon>", "gp_offset", "fp_offset", "overflow_arg_area", "reg_save_area", "tm_", "_vptr." };
 
-void capy_init()
+static std::string jit_get_compile_command(const std::filesystem::path& filePath)
 {
-    s_Storage = Storage();
-    s_Storage.IgnoredNamespaces = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" };
-    s_Storage.IgnoredClassNames = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_", "__pthread", "timespec", "lconv", "_M_" };
-    s_Storage.IgnoredNames = { "gp_offset", "fp_offset", "overflow_arg_area", "reg_save_area", "tm_", "_vptr.", "<anon>" };
-    s_Storage.IgnoreEmptyNamespaces = false;
+    auto& jit = s_Storage.Active.JITStorage;
+    std::string coreLibLinks;
+    for (auto& lib : s_Storage.Active.Runtime->CoreLibraries)
+    {
+        std::string libFix;
+        std::string libCheck = lib.substr(0, 3);
+        if (libCheck == "lib")
+            libFix = lib.substr(3);
+        else 
+            libFix = lib;
+
+        libFix = libFix.substr(0, libFix.length() - 3);
+
+        coreLibLinks.append("-l" + libFix + " ");
+    }
+    
+    std::filesystem::path rootDir = std::filesystem::current_path();
+
+    std::filesystem::path compilePath = rootDir / s_Storage.Config.BinaryPath / filePath.filename();
+    compilePath.replace_extension(".so");
+
+    std::filesystem::path sourceFile = rootDir / filePath;
+    sourceFile.replace_extension(".cpp");
+
+    std::stringstream ss;
+    ss << "gcc " << sourceFile << " -o " << compilePath << " \\\n";
+    if (!jit.CorePath.empty())
+    {
+        ss << "-I" << jit.CorePath.string() << " \\\n";
+    }
+    if (jit.CoreBinaryPaths.size() > 0)
+    {
+        for (auto& path : jit.CoreBinaryPaths)
+        {
+            std::filesystem::path truePath = rootDir / path;
+            ss << "-L" << truePath.parent_path().string() << " ";
+        }
+        ss << "\\\n";
+    }
+    ss << coreLibLinks << "\\\n"
+       << "-fPIC -shared -lstdc++ -gdwarf-4\n";
+    return ss.str();
 }
 
-void capy_shutdown()
+static void jit_worker()
 {
-    for (auto& [name, domain] : s_Storage.Domains)
+    auto& jit = s_Storage.Active.JITStorage;
+    while (jit.JitRunning)
     {
-        CapyDomain* d = domain.get();
-        capy_unload_domain(name);
+        bool hasWork = false;
+
+        {
+            std::lock_guard<std::mutex> lock(jit.JitMutex);
+
+            if (!jit.WatcherStorage.UpdatedFiles.empty())
+            {
+                jit.FilesToCompile.swap(jit.WatcherStorage.UpdatedFiles);
+                hasWork = true;
+            }
+        } 
+
+        if (hasWork)
+        {
+            for (auto& path : jit.FilesToCompile)
+            {
+                jit.CompilationCommands.push_back(jit_get_compile_command(path));
+            }
+
+            jit.JitCompilationNeeded = true;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }
 
-void capy_set_libraries_path(const std::filesystem::path &libPath)
+
+CapyDomain* capy_jit_init()
 {
-    s_Storage.SearchPath = libPath;
+    auto& cfg = s_Storage.Config;
+    if (cfg.IgnoredNamespaces.empty())
+    {
+        cfg.IgnoredNamespaces = s_IGNORED_NAMESPACES;
+    }
+    else
+    {
+        for (const auto& key : s_IGNORED_NAMESPACES)
+            cfg.IgnoredNamespaces.push_back(key);
+    }
+
+    if (cfg.IgnoredClassNames.empty())
+    {
+        cfg.IgnoredClassNames = s_IGNORED_CLASSNAMES;
+    }
+    else
+    {
+        for (const auto& key : s_IGNORED_CLASSNAMES)
+            cfg.IgnoredClassNames.push_back(key);
+    }
+
+    if (cfg.IgnoredNames.empty())
+    {
+        cfg.IgnoredNames = s_IGNORED_NAMES;
+    }
+    else
+    {
+        for (const auto& key : s_IGNORED_NAMES)
+            cfg.IgnoredNames.push_back(key);
+    }
+
+    auto& jit = s_Storage.Active.JITStorage;
+
+    // Create the Domain
+    CapyDomain* cd = new CapyDomain;
+
+    s_Storage.Active.Runtime.reset(cd);
+
+    jit.JitRunning = true;
+    jit.JitThread = std::thread(jit_worker);
+
+    fswatcher_start_storage(jit.WatcherStorage);
+
+    return cd;
+}
+
+void capy_jit_shutdown()
+{
+    auto& active = s_Storage.Active;
+
+    auto& jit = s_Storage.Active.JITStorage;
+
+    if (jit.JitRunning.exchange(false))
+    {
+        if (jit.JitThread.joinable())
+            jit.JitThread.join();
+    }
+
+    fswatcher_stop_storage(jit.WatcherStorage);
+
+    jit.WatcherStorage.Watchers.clear();
+    {
+        std::lock_guard<std::mutex> lock(jit.JitMutex);
+        jit.PendingFiles.clear();
+        jit.FilesToCompile.clear();
+        jit.CompilationCommands.clear();
+    }
+
+    jit.JitCompilationNeeded.store(false);
+
+    if (active.Runtime)
+    {
+        active.Runtime.reset();
+    }
+
+    active.InternalCalls.clear();
+}
+
+bool capy_jit_poll()
+{
+    std::filesystem::path rootDir = std::filesystem::current_path();
+    auto& jit = s_Storage.Active.JITStorage;
+    if (jit.JitCompilationNeeded.exchange(false))
+    {
+        std::vector<std::filesystem::path> files_being_compiled;
+
+        {
+            std::lock_guard<std::mutex> lock(jit.JitMutex);
+            files_being_compiled.swap(jit.FilesToCompile); // move pending files
+        }
+
+        std::vector<std::string> commands;
+
+        {
+            std::lock_guard<std::mutex> lock(jit.JitMutex);
+            commands.swap(jit.CompilationCommands);
+        }
+
+        for (auto& command : commands)
+        {
+            system(command.c_str());
+        }
+
+        for (auto& path : files_being_compiled)
+        {
+            std::filesystem::path soPath = rootDir / s_Storage.Config.BinaryPath / path.filename();
+            soPath.replace_extension(".so");
+            while (!std::filesystem::exists(soPath))
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        capy_reload_domain();
+
+
+
+        CapyDomain* raw = new CapyDomain;
+        s_Storage.Active.Runtime.reset(raw);
+
+        for (auto& lib : jit.CoreBinaryPaths)
+        {
+            capy_domain_core_library_open(lib);
+        }
+
+        capy_reload_libraries_into_domain();
+        return true;
+    }
+    return false;
+}
+
+void capy_jit_set_binary_path(const std::filesystem::path &binaryPath)
+{
+    s_Storage.Config.BinaryPath = binaryPath;
+}
+
+void capy_jit_set_core_bin_include_path(const std::filesystem::path &includePath)
+{
+    s_Storage.Active.JITStorage.CorePath = includePath;
+}
+
+void capy_jit_set_source_path(const std::filesystem::path& sourcePath, FileEventCallback callback, bool recursive)
+{
+    auto& jit = s_Storage.Active.JITStorage;
+    fswatcher_add_watcher(jit.WatcherStorage, sourcePath, recursive);
+    jit.WatcherStorage.EventCallback = callback;
 }
 
 void capy_set_ignored_namespace(const std::vector<std::string>& ignoredNamespace)
 {
     for (auto& nameSpace : ignoredNamespace)
-        s_Storage.IgnoredNamespaces.push_back(nameSpace);
+        s_Storage.Config.IgnoredNamespaces.push_back(nameSpace);
 }
 
 void capy_set_ignore_empty_namespace(bool active)
 {
-    s_Storage.IgnoreEmptyNamespaces = active;
+    s_Storage.Config.IgnoreEmptyNamespaces = active;
 }
 
 void capy_set_ignored_classname(const std::vector<std::string>& ignoredClassName)
 {
     for (auto& className : ignoredClassName)
-        s_Storage.IgnoredClassNames.push_back(className);
+        s_Storage.Config.IgnoredClassNames.push_back(className);
 }
 
-CapyDomain* capy_init_domain(const std::string& name)
+void capy_reload_domain()
 {
-    uint32_t domainHash = generate_hash(name);
-    if (s_Storage.Domains.find(domainHash) != s_Storage.Domains.end())
+    auto& active = s_Storage.Active;
+    auto& jit = active.JITStorage;
+
+    /* 1. Stop JIT */
+    if (jit.JitRunning.exchange(false))
     {
-        std::cerr << "ERROR: domain '" << name << "' already exists!\n";
-        return nullptr;
+        if (jit.JitThread.joinable())
+            jit.JitThread.join();
     }
 
-    auto domain = std::make_unique<CapyDomain>();
-    CapyDomain* ptr = domain.get();
-    s_Storage.Domains[domainHash] = std::move(domain);
-    return ptr;
+    /* 2. Destroy domain */
+    active.Runtime.reset();
+
+    /* 3. Create new domain */
+    CapyDomain* newDomain = new CapyDomain;
+    active.Runtime.reset(newDomain);
+
+    /* 4. Restart JIT */
+    jit.JitRunning.store(true);
+    jit.JitThread = std::thread(jit_worker);
 }
 
-void capy_unload_domain(const std::string& domainName)
+std::string capy_dump_domain()
 {
-    uint32_t domainHash = generate_hash(domainName);
-    auto it = s_Storage.Domains.find(domainHash);
-    if (it == s_Storage.Domains.end())
+    auto* cd = s_Storage.Active.Runtime.get();
+
+    if (!cd)
     {
-        std::cout << "Domain: " << domainName << " doesn't exist!\n";
-        return;
+        return "Domain not set!";
     }
 
-    s_Storage.Domains.erase(it);
-    s_Storage.InternalCalls.clear();
-}
-
-void capy_unload_domain(const uint32_t& domainHash)
-{
-    auto it = s_Storage.Domains.find(domainHash);
-    if (it == s_Storage.Domains.end())
-    {
-        return;
-    }
-
-    s_Storage.Domains.erase(it);
-    s_Storage.InternalCalls.clear();
-}
-
-std::string capy_dump_domain(const std::string& domainName)
-{
-    uint32_t domainHash = generate_hash(domainName);
-    if (s_Storage.Domains.find(domainHash) == s_Storage.Domains.end())
-    {
-        std::cerr << "capy_dump_domain: Domain '" << domainName << "' doesn't exist!\n";
-        return "<null>\n";
-    }
-    std::string str = "Domain: " + domainName + "\n";
-    CapyDomain* domain = s_Storage.Domains[domainHash].get();
-    for (auto& [_, lib] : domain->Libraries)
+    std::string str;
+    for (auto& [_, lib] : cd->Libraries)
     {
         str.append("  Library: " + lib->Name);
         if (lib->IsCore)
@@ -186,43 +377,62 @@ std::string capy_dump_domain(const std::string& domainName)
     }
 
     return str;
-
 }
 
-void capy_reload_libraries_into_domain(CapyDomain* cd)
+void capy_reload_libraries_into_domain()
 {
-    for (auto& entry : std::filesystem::directory_iterator(s_Storage.SearchPath))
+    auto* cd = s_Storage.Active.Runtime.get();
+
+    if (!cd)
+    {
+        std::cerr << "ERROR: Domain not set!\nBe sure to call capy_jit_init!\n";
+        return;
+    }
+
+    if (s_Storage.Config.BinaryPath.empty())
+        s_Storage.Config.BinaryPath = std::filesystem::current_path();
+
+    for (auto& entry : std::filesystem::directory_iterator(s_Storage.Config.BinaryPath))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".so")
         {
-            capy_domain_library_open(cd, entry.path().filename(), false);
+            capy_domain_library_open(entry.path().filename());
         }
     }
 }
 
-CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName, bool isCore)
+CapyLibrary* capy_domain_library_open(const std::string& binName)
 {
-    std::filesystem::path libPath = s_Storage.SearchPath;
-    libPath.append(libName);
+    auto* cd = s_Storage.Active.Runtime.get();
 
-    int fd = open(libPath.c_str(), O_RDONLY);
-    if (fd < 0 && !s_Storage.SearchPath.empty())
+    if (!cd)
     {
-        fd = open(libName.c_str(), O_RDONLY);
-        if (fd < 0)
-        {
-            std::cerr << "ERROR: failed to open file: " << libPath.generic_string() << "\n";
-            return nullptr;
-        }
-        libPath = std::filesystem::path(libName);
+        std::cerr << "ERROR: Domain not set!\nBe sure to call capy_jit_init!\n";
+        return nullptr;
     }
 
-    uint32_t libHash = generate_hash(libPath.filename().string());
 
-    if (d->Libraries.find(libHash) != d->Libraries.end())
+    if (s_Storage.Config.BinaryPath.empty())
+        s_Storage.Config.BinaryPath = std::filesystem::current_path();
+
+
+    std::filesystem::path fullPath = s_Storage.Config.BinaryPath / binName;
+    int fd = open(fullPath.c_str(), O_RDONLY);
+    if (fd < 0)
     {
-        return d->Libraries.at(libHash).get();
+        std::cerr << "ERROR: Core library filed to open at: " << fullPath.string() << "\n";
+        close(fd);
+        return nullptr;
     }
+
+    uint32_t libHash = generate_hash(fullPath.filename().string());
+
+    if (cd->Libraries.find(libHash) != cd->Libraries.end())
+    {
+        return cd->Libraries.at(libHash).get();
+    }
+
+    auto& storage = s_Storage.Active;
 
     elf::elf ef(elf::create_mmap_loader(fd));
     dwarf::dwarf dw;
@@ -242,12 +452,12 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
 
     update_symbol_namespaces(symbols);
 
-    symbols = process_library(ef, symbols, s_Storage);
+    symbols = process_library(ef, symbols, storage);
 
-    void* instance = dlopen(libPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    void* instance = dlopen(fullPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (!instance)
     {
-        std::cerr << "ERROR: " << dlerror() << "\n";
+        std::cerr << "DLOPEN ERROR: " << dlerror() << "\n";
         return nullptr;
     }
 
@@ -262,10 +472,162 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
         uint32_t callHash = generate_hash(sym.Name);
 
         // Try internal calls first (highest priority)
-        if (s_Storage.InternalCalls.contains(callHash))
+        if (s_Storage.Active.InternalCalls.contains(callHash))
         {
             void** handleAddr = reinterpret_cast<void**>(handle);
-            *handleAddr = s_Storage.InternalCalls[callHash];
+            *handleAddr = s_Storage.Active.InternalCalls[callHash];
+        }
+
+        if (!handle && (!sym.IsVariable && !sym.IsClassInstance))
+            continue;
+
+        std::string fullName;
+        if (!sym.Namespace.empty() && !sym.ClassName.empty())
+            fullName += sym.Namespace + "::" + sym.ClassName;
+        else if (!sym.Namespace.empty())
+            fullName += sym.Namespace;
+        else if (!sym.ClassName.empty())
+            fullName += sym.ClassName;
+
+
+        // Ensure class exists or create new
+        CapyClass* klass = nullptr;
+        uint32_t classHash = generate_hash(fullName);
+        auto it = classes.find(classHash);
+        if (it == classes.end())
+        {
+            auto newKlass = std::make_unique<CapyClass>();
+            newKlass->NameSpace = sym.Namespace;
+            newKlass->ClassName = sym.ClassName;
+            newKlass->VTable = std::make_unique<CapyVTable>();
+            klass = newKlass.get();
+            classes[classHash] = std::move(newKlass);
+        }
+        else
+        {
+            klass = it->second.get();
+        }
+
+        if (sym.IsVariable)
+        {
+            auto field = std::make_unique<CapyField>();
+            field->SymHandle = handle;
+            field->FieldType = string_to_value_type(sym.ReturnType);
+            field->FieldTypeString = sym.ReturnType;
+            field->Offset = sym.Offset;
+            klass->ClassSize += sym.Offset;
+            field->ClassMember = sym.IsVariable && sym.IsClassInstance;
+            field->SymbolMetaData = sym;
+            uint32_t fieldHash = generate_hash(sym.Name);
+            klass->VTable->Fields[fieldHash] = std::move(field);
+        }
+        else
+        {
+            auto method = std::make_unique<CapyMethod>();
+            method->SymHandle = handle;
+            method->ReturnType = string_to_value_type(sym.ReturnType);
+
+            if (sym.IsClassInstance)
+            {
+                method->ClassMember = true;
+                method->Parameters.push_back(ValueType::POINTER);
+            }
+            for (auto& param : sym.ParameterTypes)
+            {
+                ValueType type = string_to_value_type(param);
+                if (type != ValueType::VOID)
+                    method->Parameters.push_back(type);
+            }
+
+            method->SymbolMetaData = sym;
+            uint32_t methodHash = generate_hash(sym.Name);
+            klass->VTable->Methods[methodHash] = std::move(method);
+        }
+    }
+
+    image->Classes = std::move(classes);
+
+    std::unique_ptr<CapyLibrary> library = std::make_unique<CapyLibrary>(std::move(image));
+    library->SymbolInstance = std::move(instance);
+    library->IsCore = false;
+
+    cd->Libraries[libHash] = std::move(library);
+
+    return cd->Libraries.at(libHash).get();
+}
+
+CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath)
+{
+    auto* cd = s_Storage.Active.Runtime.get();
+
+    if (!cd)
+    {
+        std::cerr << "ERROR: Domain not set!\nBe sure to call capy_jit_init!\n";
+        return nullptr;
+    }
+
+
+
+    int fd = open(binPath.c_str(), O_RDONLY);
+    if (fd < 0)
+    {
+        std::cerr << "ERROR: Core library filed to open at: " << binPath.string() << "\n";
+        close(fd);
+        return nullptr;
+    }
+
+
+    uint32_t libHash = generate_hash(binPath.filename().string());
+
+    if (cd->Libraries.find(libHash) != cd->Libraries.end())
+    {
+        return cd->Libraries.at(libHash).get();
+    }
+
+    auto& storage = s_Storage.Active;
+
+    elf::elf ef(elf::create_mmap_loader(fd));
+    dwarf::dwarf dw;
+    try {
+        dw = dwarf::dwarf(dwarf::elf::create_loader(ef));
+    } catch (std::exception& e)
+    {
+        std::cerr << "ERROR: " << e.what() << "\n";
+    }
+    auto image = std::make_unique<CapyImage>();
+    std::vector<_SymbolMetaData> symbols;
+
+    for (auto &cu : dw.compilation_units())
+        traverse_and_collect(cu.root(), *(new std::vector<std::string>), s_Storage, symbols);
+
+    close(fd);
+
+    update_symbol_namespaces(symbols);
+
+    symbols = process_library(ef, symbols, storage);
+
+    void* instance = dlopen(binPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    if (!instance)
+    {
+        std::cerr << "DLOPEN ERROR: " << dlerror() << "\n";
+        return nullptr;
+    }
+
+    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> classes;
+
+    for (auto& sym : symbols)
+    {
+        void* handle = nullptr;
+        if (!sym.Signature.empty())
+            handle = dlsym(instance, sym.Signature.c_str());
+        
+        uint32_t callHash = generate_hash(sym.Name);
+
+        // Try internal calls first (highest priority)
+        if (s_Storage.Active.InternalCalls.contains(callHash))
+        {
+            void** handleAddr = reinterpret_cast<void**>(handle);
+            *handleAddr = s_Storage.Active.InternalCalls[callHash];
         }
 
         if (!handle && (!sym.IsVariable && !sym.IsClassInstance))
@@ -337,34 +699,49 @@ CapyLibrary* capy_domain_library_open(CapyDomain* d, const std::string& libName,
 
     std::unique_ptr<CapyLibrary> library = std::make_unique<CapyLibrary>(std::move(image));
     library->SymbolInstance = std::move(instance);
-    library->IsCore = isCore;
+    library->IsCore = true;
 
-    if (isCore)
-        d->CoreLibraries.push_back(libPath.filename().c_str());
+    auto& binaryPaths = s_Storage.Active.JITStorage.CoreBinaryPaths;
+    cd->CoreLibraries.push_back(binPath.filename().c_str());
+    bool found = false;
+    for (auto& path : binaryPaths)
+    {
+        if (path == binPath)
+        {
+            found = true;
+            break;
+        }
+    }
 
+    if (!found)
+        binaryPaths.push_back(binPath);
 
-    d->Libraries[libHash] = std::move(library);
+    cd->Libraries[libHash] = std::move(library);
 
-    return d->Libraries.at(libHash).get();
+    return cd->Libraries.at(libHash).get();
 }
 
-std::vector<std::string> capy_get_core_libraries_from_domain(const std::string &domainName)
+std::vector<std::string> capy_get_core_libraries_from_domain()
 {
-    uint32_t domainHash = generate_hash(domainName);
-    auto it = s_Storage.Domains.find(domainHash);
-    if (it == s_Storage.Domains.end())
+    auto* cd = s_Storage.Active.Runtime.get();
+
+    if (!cd)
     {
-        std::cerr << "ERROR: domain '" << domainName << "' doesn't exists!\n";
+        std::cerr << "ERROR: Domain not set!\nBe sure to call capy_jit_init!\n";
         return {};
     }
 
-    CapyDomain* domain = it->second.get();
+    if (!cd)
+        return {};
 
-    return domain->CoreLibraries;
+    return cd->CoreLibraries;
 }
 
 CapyImage* capy_library_get_image(CapyLibrary* l)
 {
+    if (!l)
+        return nullptr;
+
     return l->Image.get();
 }
 
@@ -444,6 +821,16 @@ void capy_field_data_set(void* instance, CapyClass* cc, const std::string& field
 
 void capy_field_data_set(void* instance, CapyField* cf, void* value, int valueSizeOverride)
 {
+    auto* cd = s_Storage.Active.Runtime.get();
+
+    if (!cd)
+    {
+        std::cerr << "ERROR: Domain not set!\nBe sure to call capy_jit_init!\n";
+        return;
+    }
+
+
+    auto& storage = s_Storage.Active;
     if (!cf) {
         fprintf(stderr, "capy_field_data_set: cf == nullptr\n");
         return;
@@ -452,42 +839,28 @@ void capy_field_data_set(void* instance, CapyField* cf, void* value, int valueSi
     // If you have owner class size in metadata, validate bounds:
     size_t size = type_size(cf->FieldType);
 
-    FieldSetterFunc setter = nullptr;
-
-    // Lookup setter for this type
-    uint32_t fieldSetterHash = generate_hash(cf->FieldTypeString);
-    auto it = s_Storage.TypeSetters.find(fieldSetterHash);
-    if (it != s_Storage.TypeSetters.end())
-        setter = it->second;
 
     if (instance)
     {
         void* ptr = static_cast<char*>(instance) + cf->Offset;
-
-        if (setter)
-        {
-            setter(ptr, value); // use registered type handler
-        }
-        else
-        {
-            memcpy(ptr, value, size); // default memcpy
-        }
+        memcpy(ptr, value, size); // default memcpy
     }
     else
     {
-        if (setter)
-        {
-            setter(cf->DefaultData.raw_ptr(), value);
-        }
-        else
-        {
-            memcpy(cf->DefaultData.raw_ptr(), value, size);
-        }
+        memcpy(cf->DefaultData.raw_ptr(), value, size);
     }
 }
 
 void* capy_function_call_from_method(CapyMethod* method, const std::vector<RuntimeValue>& values)
 {
+    auto* cd = s_Storage.Active.Runtime.get();
+
+    if (!cd)
+    {
+        std::cerr << "ERROR: Domain not set!\nBe sure to call capy_jit_init!\n";
+        return nullptr;
+    }
+
     if (!method || !method->SymHandle) return nullptr;
 
     if (values.size() != method->Parameters.size())
@@ -531,39 +904,71 @@ void* capy_function_call_from_method(CapyMethod* method, const std::vector<Runti
 
 void capy_add_internal_call(const std::string& name, void* functionSymbol)
 {
+    auto* cd = s_Storage.Active.Runtime.get();
+
+    auto& storage = s_Storage.Active;
     uint32_t callHash = generate_hash(name);
-    if (s_Storage.InternalCalls.contains(callHash)) return;
+    if (storage.InternalCalls.contains(callHash)) return;
 
-    s_Storage.InternalCalls[callHash] = functionSymbol;
+    storage.InternalCalls[callHash] = functionSymbol;
 
-    
-    for (auto& [_, domain] : s_Storage.Domains)
+    if (!cd)
+        return;
+
+    for (auto& [_, library] : cd->Libraries)
     {
-        for (auto& [_, library] : domain->Libraries)
-        {
-            if (!library->SymbolInstance) continue;
+        if (!library->SymbolInstance) continue;
 
-            CapyImage* img = library->Image.get();
-            for (auto& [_, cls] : img->Classes)
+        CapyImage* img = library->Image.get();
+        for (auto& [_, cls] : img->Classes)
+        {
+            for (auto& [symHash, sym] : cls->VTable->Fields)
             {
-                for (auto& [symHash, sym] : cls->VTable->Fields)
+                uint32_t nameHash = generate_hash(name);
+                if (symHash == nameHash)
                 {
-                    uint32_t nameHash = generate_hash(name);
-                    if (symHash == nameHash)
-                    {
-                        // Directly patch the pointer in the plugin
-                        void** addr = reinterpret_cast<void**>(cls->VTable->Fields[symHash]->SymHandle);
+                    // Directly patch the pointer in the plugin
+                    void** addr = reinterpret_cast<void**>(cls->VTable->Fields[symHash]->SymHandle);
                         if (addr)
                             *addr = functionSymbol;
-                    }
                 }
             }
         }
     }
 }
 
-void capy_add_type_setter(const std::string& name, FieldSetterFunc setter)
+void capy_jit_set_fs_event_callback(FileEventCallback callback)
 {
-    uint32_t setterHash = generate_hash(name);
-    s_Storage.TypeSetters[setterHash] = setter;
+    s_Storage.Active.JITStorage.WatcherStorage.EventCallback = callback;
+}
+
+CapyDomain* capy_get_root_domain()
+{
+    auto* cd = s_Storage.Active.Runtime.get();
+    if (!cd)
+    {
+        std::cerr << "ERROR: Domain not set!\nBe sure to call capy_jit_init!\n";
+        return nullptr;
+    }
+
+    return cd;
+}
+
+CapyObject capy_instantiate_object(CapyClass* klass)
+{
+    CapyObject obj;
+    if (!klass || klass->ClassSize == 0)
+        return obj;
+
+    obj.Klass = klass;
+
+    void* mem = std::aligned_alloc(
+        klass->Allignment,
+        ((klass->ClassSize + klass->Allignment - 1) / klass->Allignment) * klass->Allignment
+        );
+
+    memset(mem, 0, klass->ClassSize);
+    obj.Memory = mem;
+
+    return obj;
 }

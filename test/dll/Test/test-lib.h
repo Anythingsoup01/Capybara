@@ -1,7 +1,7 @@
 #pragma once
 #include "base-class.h"
 
-
+#include <cstdint>
 
 namespace DLL
 {
@@ -13,7 +13,7 @@ namespace DLL
 
         void CustomAdd(int a, int b);
 
-        static Test* Create();
+        void UpdateCheck(int16_t test);
     private:
         const char* m_PreviousMessage;
     };

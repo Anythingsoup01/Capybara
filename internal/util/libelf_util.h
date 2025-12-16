@@ -3,8 +3,7 @@
 #include <libelfin/elf/elf++.hh>
 #include <libelfin/dwarf/dwarf++.hh>
 
-#include <capybara/runtime.h>
-#include <string_util.h>
+#include "capybara/runtime.h"
 
 // This function will get the name at any give die, if no name is
 // found <anon> will be returned
@@ -19,6 +18,6 @@ std::string get_return_type(const dwarf::die& die);
 // This function lets us traverse a DWARF Die and collect symbol
 // information, this is a CORE function and should only be used by
 // capybara
-void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_stack, Storage& storage, std::vector<_SymbolMetaData>& outSymbols);
+void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_stack, RuntimeStorage& storage, std::vector<_SymbolMetaData>& outSymbols);
 
-std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vector<_SymbolMetaData>& symbols, Storage& storage);
+std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vector<_SymbolMetaData>& symbols, CapyActiveDomain& storage);

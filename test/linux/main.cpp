@@ -1,5 +1,7 @@
+
 #include <capybara/capybara.h>
 #include <capybara/runtime.h>
+
 #include <iostream>
 
 #include <dlfcn.h>
@@ -12,6 +14,7 @@ public:
     CapyWrapper(CapyImage* ci, const char* nameSpace, const char* className)
 	{
         m_CapyClass = capy_class_from_name(ci, nameSpace, className);
+        m_ClassObject = capy_instantiate_object(m_CapyClass);
 	}
 	CapyMethod* GetMethod(const char* methodName)
 	{
@@ -19,15 +22,20 @@ public:
 		    return capy_method_from_class(m_CapyClass, methodName);
 	    return nullptr;
     }
-	void* InvokeMethod(CapyMethod* method, const std::vector<RuntimeValue>& params)
+	void* InvokeMethod(CapyMethod* method, const std::vector<RuntimeValue>& params = {})
 	{
         if (!method)
             return nullptr;
 
-		return capy_function_call_from_method(method, params);
+        std::vector<RuntimeValue> localCopy = params;
+
+        localCopy.insert(localCopy.begin(), m_ClassObject.Memory);
+
+		return capy_function_call_from_method(method, localCopy);
 	}
 
 private:
+    CapyObject m_ClassObject;
     CapyClass* m_CapyClass;
 };
 
@@ -38,55 +46,67 @@ int Internal_Add(int a, int b)
     return a + b;
 }
 
+std::filesystem::path CustomFileEventCallback(FileEventType type, const std::filesystem::path& path)
+{
+
+    switch (type)
+    {
+        case FileEventType::Create:
+            std::cout << "CREATED FILE: " << path.filename().string() << "\n";
+            break;
+        case FileEventType::Modify:
+            std::cout << "MODIFIED FILE: " << path.filename().string() << "\n";
+            break;
+        case FileEventType::Delete:
+            std::cout << "DELETED FILE: " << path.filename().string() << "\n";
+            break;
+    }
+
+    return path;
+}
 
 
 int main(int argc, char** argv) 
 {
-    capy_init();
-
-    capy_set_libraries_path("build");
-
-    capy_set_ignored_classname({"IgnoreThis"});
-
-    CapyDomain* d = capy_init_domain("Expansion");
+    auto* cd = capy_jit_init();
 
     ADD_INTERNAL_CALL(Internal_Add);
+    capy_jit_set_source_path("test/dll/Test", CustomFileEventCallback, true);
 
-    capy_domain_library_open(d, "libbase-class.so", true);
+    capy_jit_set_binary_path("test/dll/Test/.build");
 
-    capy_reload_libraries_into_domain(d);
+    capy_jit_set_core_bin_include_path("test/dll/Base");
+
+    capy_domain_core_library_open("build/test/dll/Base/libbase-class.so");
+
+    capy_reload_libraries_into_domain();
+
+    CapyLibrary* lib = capy_domain_library_open("test-lib.so");
+
+    CapyImage* img = capy_library_get_image(lib);
 
 
-    CapyLibrary* l = capy_domain_library_open(d, "libtest-lib.so", false);
+    CapyWrapper TestClassWrapper(img, "DLL", "Test");
 
-    CapyImage* i = capy_library_get_image(l);
+    CapyMethod* PrintMethod = TestClassWrapper.GetMethod("Print");
+    CapyMethod* PrintAgainMethod = TestClassWrapper.GetMethod("PrintAgain");
+    CapyMethod* AddMethod = TestClassWrapper.GetMethod("CustomAdd");
 
-    CapyWrapper cw(i, "DLL", "Test");
+    TestClassWrapper.InvokeMethod(PrintMethod, {"This is my message!"});
 
+    TestClassWrapper.InvokeMethod(PrintAgainMethod);
 
-    CapyMethod* cm = cw.GetMethod("Create");
-    CapyMethod* pm = cw.GetMethod("Print");
-    CapyMethod* pam = cw.GetMethod("PrintAgain");
-    CapyMethod* am = cw.GetMethod("CustomAdd");
+    TestClassWrapper.InvokeMethod(AddMethod, {10, 15});
 
-    void* valPtr = cw.InvokeMethod(cm, {});
-
-    cw.InvokeMethod(pm, {cm, "This is my message!"});
-
-    cw.InvokeMethod(pam, {cm});
-
-    cw.InvokeMethod(am, {cm, 10, 15});
-
-    auto coreLibs = capy_get_core_libraries_from_domain("Expansion");
-
-    for (auto& libName : coreLibs)
+    while (true) 
     {
-        std::cout << libName << "\n";
+        if (capy_jit_poll())
+        {
+            std::cout << capy_dump_domain();
+        }
     }
 
-    std::cout << capy_dump_domain("Expansion");
-
-    capy_unload_domain("Expansion");
+    capy_jit_shutdown();
 
     return 0;
 }

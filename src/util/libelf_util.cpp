@@ -1,8 +1,7 @@
+#include "util/libelf_util.h"
 
-#include "libelf_util.h"
-
-#include "string_util.h"
-#include "cxxabi_util.h"
+#include "util/string_util.h"
+#include "util/cxxabi_util.h"
 
 // Get the name of a type DIE
 std::string get_short_name(const dwarf::die& die)
@@ -60,8 +59,9 @@ std::string get_return_type(const dwarf::die& die)
     return "void*";
 } 
 
-void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_stack, Storage& storage, std::vector<_SymbolMetaData>& outSymbols)
+void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_stack, RuntimeStorage& storage, std::vector<_SymbolMetaData>& outSymbols)
 {
+    auto& cfg = storage.Config;
     std::string name = get_short_name(d);
 
     // Keep track of scopes
@@ -74,13 +74,18 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
 
     if (is_namespace && !name.empty())
     {
-        if (strs_n_equal(name, storage.IgnoredNamespaces))
+        if (strs_n_equal(name, cfg.IgnoredNamespaces))
             return;
     }
-    if ((is_classname || is_structure) && !name.empty())
+    if (is_classname && !name.empty())
     {
-        if (strs_n_equal(name, storage.IgnoredClassNames))
+        if (strs_n_equal(name, cfg.IgnoredClassNames))
             return;
+    }
+    if (is_structure)
+    {
+        // TODO: IMPLEMENT THIS
+        return;
     }
 
     if (is_scope && !name.empty())
@@ -89,7 +94,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
     // Process functions
     if (d.tag == dwarf::DW_TAG::subprogram) {
 
-        if (scope_stack.empty() && storage.IgnoreEmptyNamespaces)
+        if (scope_stack.empty() && cfg.IgnoreEmptyNamespaces)
             return;
 
         // This removes any mangled symbols, not sure why
@@ -145,7 +150,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
 
                 if (strncmp(lastNamespace.c_str(), typeName.c_str(), typeName.size()) == 0)
                 {
-                    for (auto& name : storage.KnownClassNames)
+                    for (auto& name : cfg.KnownClassNames)
                     {
                         if (name == typeName)
                         {
@@ -153,7 +158,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
                             continue;
                         }
                     }
-                    storage.KnownClassNames.push_back(typeName);
+                    cfg.KnownClassNames.push_back(typeName);
                     sym.IsClassInstance = true;
                 }
                 else
@@ -177,7 +182,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
 
     if (d.tag == dwarf::DW_TAG::member)
     {
-        if (scope_stack.empty() && storage.IgnoreEmptyNamespaces)
+        if (scope_stack.empty() && cfg.IgnoreEmptyNamespaces)
             return;
 
         std::vector<std::string> full_scope(scope_stack);
@@ -219,7 +224,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         // then we will convert it to the ClassName.
         _SymbolMetaData sym;
         std::string name = get_short_name(d);
-        if (strs_n_equal(name, storage.IgnoredNames))
+        if (strs_n_equal(name, cfg.IgnoredNames))
             return;
 
         sym.Name = name;
@@ -235,7 +240,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
 
     if (d.tag == dwarf::DW_TAG::variable)
     {
-        if (scope_stack.empty() && storage.IgnoreEmptyNamespaces)
+        if (scope_stack.empty() && cfg.IgnoreEmptyNamespaces)
             return;
 
         std::vector<std::string> full_scope(scope_stack);
@@ -271,7 +276,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         scope_stack.pop_back();
 }
 
-std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vector<_SymbolMetaData>& symbols, Storage& storage)
+std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vector<_SymbolMetaData>& symbols, CapyActiveDomain& storage)
 {
     std::unordered_map<std::string, std::string> symbolNames;
     for (auto &sec : ef.sections())

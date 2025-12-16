@@ -4,6 +4,8 @@
 #include <memory.h>
 #include <link.h>
 
+#include "../internal/fswatcher/fswatcher.h"
+
 constexpr size_t INVALID_OFFSET = static_cast<size_t>(-1);
 
 struct _SymbolMetaData {
@@ -105,6 +107,16 @@ struct CapyField
     RuntimeValue DefaultData;
 
     _SymbolMetaData SymbolMetaData;
+
+    CapyField()
+        : SymHandle(nullptr),
+        FieldType(ValueType::VOID),         // or whatever “invalid” is in your enum
+        Offset(0),
+        ClassMember(false),
+        FieldTypeString(""),
+        DefaultData{},                      // zero initialize RuntimeValue
+        SymbolMetaData{}                    // uses its own default ctor
+    {}
 };
 
 struct CapyMethod
@@ -116,12 +128,26 @@ struct CapyMethod
     bool ClassMember;
 
     _SymbolMetaData SymbolMetaData;
+
+    CapyMethod()
+        : SymHandle(nullptr),
+        ReturnType(ValueType::VOID),
+        Parameters(),
+        ParameterTypeStrings(),
+        ClassMember(false),
+        SymbolMetaData{}
+    {}
 };
 
 struct CapyVTable
 {
     std::unordered_map<uint32_t, std::unique_ptr<CapyMethod>> Methods;
     std::unordered_map<uint32_t, std::unique_ptr<CapyField>> Fields;
+
+    CapyVTable()
+        : Methods(),
+        Fields()
+    {}
 };
 
 struct CapyClass
@@ -131,12 +157,22 @@ struct CapyClass
 
     std::unique_ptr<CapyVTable> VTable;
 
-    CapyClass* Parent = nullptr;
+    size_t ClassSize = 0;
+    size_t Allignment = 16;
 
+    CapyClass()
+        : NameSpace(""),
+        ClassName(""),
+        VTable(nullptr)
+    {}
 };
 
 struct CapyImage {
     std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> Classes;
+
+    CapyImage()
+        : Classes()
+    {}
 };
 
 struct CapyLibrary {
@@ -150,6 +186,15 @@ struct CapyLibrary {
     // Map of relocations
     std::unordered_map<uintptr_t, uintptr_t> OriginalRelocs;
 
+    CapyLibrary()
+        : Name(""),
+        Image(nullptr),
+        LibPath(),
+        SymbolInstance(nullptr),
+        IsCore(false),
+        OriginalRelocs()
+    {}
+
     CapyLibrary(std::unique_ptr<CapyImage> image)
         : Image(std::move(image)) {}
 
@@ -160,25 +205,69 @@ struct CapyLibrary {
     }
 };
 
+struct CapyObject
+{
+    void* Memory;
+    CapyClass* Klass;
+};
+
 struct CapyDomain {
     std::unordered_map<uint32_t, std::unique_ptr<CapyLibrary>> Libraries;
     std::vector<std::string> CoreLibraries;
+
+    std::vector<CapyObject> LiveObjects;
+
+    CapyDomain()
+        : Libraries(),
+        CoreLibraries(),
+        LiveObjects()
+    {}
 };
+
 
 // TODO: Delete this if not needed
 template<typename... Ts>
 struct capy_type_list {};
 
-using FieldSetterFunc = void(*)(void* ptr, void* value);
+struct CapyJITStorage
+{
+    DirectoryWatcherStorage WatcherStorage;
 
-struct Storage {
-    std::unordered_map<uint32_t, std::unique_ptr<CapyDomain>> Domains;
+    std::mutex JitMutex;
+    std::vector<std::filesystem::path> PendingFiles;
+    std::vector<std::filesystem::path> FilesToCompile;
+    std::vector<std::string> CompilationCommands;
+
+    std::atomic<bool> JitCompilationNeeded{false};
+    std::atomic<bool> JitRunning{false};
+    std::thread JitThread;
+
+    std::filesystem::path CorePath;
+    std::vector<std::filesystem::path> CoreBinaryPaths;
+};
+
+struct CapyActiveDomain {
+    std::unique_ptr<CapyDomain> Runtime;
+    CapyJITStorage JITStorage;
+
+    std::unordered_map<uint32_t, void*> InternalCalls;
+};
+
+struct CapyConfigStorage
+{
+    bool IgnoreEmptyNamespaces = false;
+
     std::vector<std::string> KnownClassNames;
     std::vector<std::string> IgnoredNamespaces;
     std::vector<std::string> IgnoredClassNames;
     std::vector<std::string> IgnoredNames;
-    std::unordered_map<uint32_t, void*> InternalCalls;
-    std::unordered_map<uint32_t, FieldSetterFunc> TypeSetters;
-    bool IgnoreEmptyNamespaces;
-    std::filesystem::path SearchPath;
+    std::filesystem::path BinaryPath;
 };
+
+struct RuntimeStorage
+{
+    CapyActiveDomain Active;
+    CapyConfigStorage Config;
+};
+
+extern RuntimeStorage s_Storage;

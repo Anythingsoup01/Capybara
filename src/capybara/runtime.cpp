@@ -1,5 +1,5 @@
 #include "capybara/runtime.h"
-#include "string_util.h"
+#include "util/string_util.h"
 
 ValueType string_to_value_type(const std::string& value)
 {
