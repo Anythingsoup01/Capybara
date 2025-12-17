@@ -433,7 +433,7 @@ CapyLibrary* capy_domain_library_open(const std::string& binName)
         std::cerr << "ERROR: Domain not set!\nBe sure to call capy_jit_init!\n";
         return nullptr;
     }
-    
+
     if (s_Storage.Config.BinaryPath.empty())
         s_Storage.Config.BinaryPath = std::filesystem::current_path();
 
@@ -1007,7 +1007,7 @@ CapyObject* capy_instantiate_object(CapyClass* klass)
 
     void* mem = std::aligned_alloc(
         klass->Allignment,
-        (((klass->ClassSize + klass->Allignment - 1) / klass->Allignment) * klass->Allignment)
+        (((klass->ClassSize + klass->BaseClassSize + klass->Allignment - 1) / klass->Allignment) * klass->Allignment)
         );
 
     if (!mem)
