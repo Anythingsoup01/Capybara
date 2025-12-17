@@ -238,6 +238,10 @@ bool capy_jit_poll()
 
         capy_reload_domain();
 
+        for (auto& coreLib : jit.CoreBinaryPaths)
+        {
+            capy_domain_core_library_open(coreLib);
+        }
 
         capy_reload_libraries_into_domain();
 
@@ -294,13 +298,6 @@ void capy_reload_domain()
             jit.JitThread.join();
     }
 
-    std::unordered_map<uint32_t, std::unique_ptr<CapyLibrary>> libCopy;
-
-    for (auto& [libID, lib] : active.Runtime->Libraries)
-        libCopy[libID] = std::make_unique<CapyLibrary>(*lib);
-
-    std::vector<std::string> coreLibStrings = active.Runtime->CoreLibraries;
-
     /* 2. Destroy domain */
     active.Runtime.reset();
 
@@ -314,10 +311,6 @@ void capy_reload_domain()
 
     CapyDomain* raw = new CapyDomain;
     s_Storage.Active.Runtime.reset(raw);
-
-    s_Storage.Active.Runtime->Libraries = std::move(libCopy);
-    s_Storage.Active.Runtime->CoreLibraries = coreLibStrings;
-
 }
 
 std::string capy_dump_domain()
@@ -417,7 +410,11 @@ void capy_reload_libraries_into_domain()
             uint32_t totalSize = 0;
             for (auto& baseClass : s_Storage.Config.ClassMap[klassHash])
             {
-                totalSize += capy_class_from_name(baseClass.NameSpace, baseClass.ClassName)->ClassSize;
+                auto* obtainedClass = capy_class_from_name(baseClass.NameSpace, baseClass.ClassName);
+
+                // If null there is no implementation, therefore no variables.
+                if (obtainedClass)
+                    totalSize += obtainedClass->BaseClassSize;
             }
             klass->BaseClassSize = totalSize;
         }
