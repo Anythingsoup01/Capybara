@@ -17,6 +17,7 @@ struct _SymbolMetaData {
     std::vector<std::string> ParameterTypes;
     bool IsVariable = false;
     bool IsClassInstance = false;
+    bool IsStruct = false;
     size_t Offset = INVALID_OFFSET;
 };
 
@@ -25,6 +26,7 @@ enum class ValueType {
     INT16, INT32, INT64,
     UINT16, UINT32, UINT64,
     FLOAT, DOUBLE,
+    STRUCT,
     POINTER,
 };
 
@@ -96,8 +98,10 @@ struct CapyField
 {
     void* SymHandle;
     ValueType FieldType;
-    unsigned int Offset;
+    uint64_t Offset;
+    uint64_t Size;
     bool ClassMember;
+    bool IsStruct;
 
     // We use a string for custom types
     // that are either non-standard or
@@ -112,6 +116,7 @@ struct CapyField
       : SymHandle(nullptr),
         FieldType(ValueType::VOID),         // or whatever “invalid” is in your enum
         Offset(0),
+        Size(0),
         ClassMember(false),
         FieldTypeString(""),
         DefaultData{},                      // zero initialize RuntimeValue
@@ -122,6 +127,7 @@ struct CapyField
         : SymHandle(other.SymHandle),
           FieldType(other.FieldType),
           Offset(other.Offset),
+          Size(other.Size),
           ClassMember(other.ClassMember),
           FieldTypeString(other.FieldTypeString),
           DefaultData(other.DefaultData),
@@ -182,12 +188,14 @@ struct CapyClass
 {
     std::string NameSpace;
     std::string ClassName;
-
     std::unique_ptr<CapyVTable> VTable;
-    uint64_t BaseClassSize = 0;
 
+    size_t BaseClassSize = 0;
+    size_t DeclaredSize = 0;
     size_t ClassSize = 0;
     size_t Allignment = 16;
+
+    bool IsStruct = false;
 
     CapyClass()
         : NameSpace(""),
@@ -209,6 +217,7 @@ struct CapyClass
 
 struct CapyImage {
     std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> Classes;
+    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> Structures;
 
     CapyImage()
         : Classes()
@@ -319,18 +328,12 @@ struct CapyDomain {
     {}
 };
 
-enum class DomainReloadPhase {
-    Idle,
-    LoadingCore,
-    LoadingLibraries,
-    Ready
-};
-
 struct BaseClasses
 {
     std::string NameSpace;
     std::string ClassName;
 };
+
 
 // TODO: Delete this if not needed
 template<typename... Ts>
@@ -366,7 +369,10 @@ struct CapyConfigStorage
     bool IgnoreEmptyNamespaces = false;
 
     std::unordered_map<uint32_t, std::vector<BaseClasses>> ClassMap;
+    std::unordered_map<uint32_t, std::vector<BaseClasses>> StructMap;
+    std::unordered_map<uint32_t, BaseClasses> CoreDataStructures;
     std::vector<std::string> KnownClassNames;
+    std::vector<std::string> KnownStructNames;
     std::vector<std::string> IgnoredNamespaces;
     std::vector<std::string> IgnoredClassNames;
     std::vector<std::string> IgnoredNames;

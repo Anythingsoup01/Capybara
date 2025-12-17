@@ -14,6 +14,8 @@
 
 #include "util/fswatcher_utils.h"
 
+#include <signal.h>
+
 RuntimeStorage s_Storage;
 
 static void update_symbol_namespaces(std::vector<_SymbolMetaData>& symbols)
@@ -35,10 +37,28 @@ static void update_symbol_namespaces(std::vector<_SymbolMetaData>& symbols)
                     NameSpace.clear();
 
                 sym.ClassName = knownName;
+                sym.IsStruct = false;
                 break;
             }
         }
-    }
+
+        for (auto& knownName : s_Storage.Config.KnownStructNames)
+        {
+            size_t foundName = NameSpace.rfind(knownName);
+            if (foundName != std::string::npos)
+            {
+                std::string className = NameSpace.substr(foundName);
+                if (className.length() != knownName.length()) continue;
+                if (foundName - 2 != std::string::npos)
+                    NameSpace = NameSpace.substr(0, foundName - strlen("::"));
+                else
+                    NameSpace.clear();
+
+                sym.ClassName = knownName;
+                sym.IsStruct = true;
+                break;
+            }
+        }}
 }
 
 static std::vector<std::string> s_IGNORED_NAMESPACES = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" };
@@ -372,13 +392,58 @@ std::string capy_dump_domain()
                     adjustedSymName.append(sym->SymbolMetaData.ClassName + "::");
 
                 adjustedSymName.append(sym->SymbolMetaData.Name);
-                str.append("        (" + symType + ") " + sym->SymbolMetaData.ReturnType + " " + adjustedSymName + ";\n");
+                str.append("        (" + symType + ") " + sym->SymbolMetaData.ReturnType + " " + adjustedSymName + " OFFSET (" + std::to_string(sym->Offset) + ");\n");
+            }
+        }
+        for (auto& [_, klass] : lib->Image->Structures)
+        {
+            std::string adjustedClassName = klass->ClassName.empty() ? "<Functions Only>" : klass->ClassName;
+            str.append("    Full Struct Name: " + adjustedClassName + " Derived Size: " + std::to_string(klass->ClassSize) + " Base Struct Size: " + std::to_string(klass->BaseClassSize) +  "\n");
+            CapyClass* klassPtr = klass.get();
+            for (auto& [hash, sym] : klassPtr->VTable->Methods)
+            {
+                str.append("      Method Symbol: " + sym->SymbolMetaData.Signature + "\n");
+                std::string symType = "Method";
+                std::string adjustedSymName;
+                if (!sym->SymbolMetaData.Namespace.empty())
+                    adjustedSymName.append(sym->SymbolMetaData.Namespace + "::");
+                if (!sym->SymbolMetaData.ClassName.empty())
+                    adjustedSymName.append(sym->SymbolMetaData.ClassName + "::");
+
+                adjustedSymName.append(sym->SymbolMetaData.Name);
+                str.append("        (" + symType + ") " + sym->SymbolMetaData.ReturnType + " " + adjustedSymName);
+                str.append("(");
+                bool first = true;
+                for (auto& param : sym->SymbolMetaData.ParameterTypes)
+                {
+                    if (param.empty())
+                        continue;
+
+                    if (!first) str.append(", ");
+                    str.append(param);
+                    first = false;
+                }
+                str.append(");\n");
+            }
+            for (auto& [hash, sym] : klassPtr->VTable->Fields)
+            {
+                str.append("      Field Symbol: " + sym->SymbolMetaData.Signature + "\n");
+                std::string symType = "Field";
+                std::string adjustedSymName;
+                if (!sym->SymbolMetaData.Namespace.empty())
+                    adjustedSymName.append(sym->SymbolMetaData.Namespace + "::");
+                if (!sym->SymbolMetaData.ClassName.empty())
+                    adjustedSymName.append(sym->SymbolMetaData.ClassName + "::");
+
+                adjustedSymName.append(sym->SymbolMetaData.Name);
+                str.append("        (" + symType + ") " + sym->SymbolMetaData.ReturnType + " " + adjustedSymName + " OFFSET (" + std::to_string(sym->Offset) + ");\n");
             }
         }
     }
 
     return str;
 }
+
 
 void capy_reload_libraries_into_domain()
 {
@@ -403,33 +468,74 @@ void capy_reload_libraries_into_domain()
 
     for (auto& [_, lib] : cd->Libraries)
     {
-        auto* image = lib->Image.get();
-        for (auto& [klassHash, klass] : image->Classes)
+        for (auto& [_, klass] : lib->Image->Structures)
         {
+            uint64_t totalSize = 0;
+            for (auto& [_, field] : klass->VTable->Fields)
+                totalSize += field->Size;
 
-            uint32_t totalSize = 0;
+            klass->ClassSize = totalSize;
+        }
+    }
+
+    // PASS 2 — compute CLASS declared sizes (all libraries)
+    for (auto& [_, lib] : cd->Libraries)
+    {
+        for (auto& [_, klass] : lib->Image->Classes)
+        {
+            for (auto& [_, field] : klass->VTable->Fields)
+            {
+                if (field->Size == 0)
+                {
+                    auto* obtainedClass =
+                        capy_class_from_name(field->SymbolMetaData.Namespace,
+                                field->SymbolMetaData.ReturnType);
+
+                    if (obtainedClass && obtainedClass->IsStruct)
+                        klass->ClassSize += obtainedClass->ClassSize;
+                }
+
+                klass->ClassSize += field->Size;
+            }
+        }
+    }
+
+    for (auto& [_, lib] : cd->Libraries)
+    {
+        for (auto& [klassHash, klass] : lib->Image->Classes)
+        {
+            size_t totalSize = 0;
+
             for (auto& baseClass : s_Storage.Config.ClassMap[klassHash])
             {
-                auto* obtainedClass = capy_class_from_name(baseClass.NameSpace, baseClass.ClassName);
+                auto* obtainedClass =
+                    capy_class_from_name(baseClass.NameSpace, baseClass.ClassName);
 
-                // If null there is no implementation, therefore no variables.
                 if (obtainedClass)
-                {
                     totalSize += obtainedClass->ClassSize;
-                }
-
-                for (auto& [fieldID, field] : obtainedClass->VTable->Fields)
-                {
-                    klass->VTable->Fields[fieldID] = std::make_unique<CapyField>(std::move(*field));
-                }
-
             }
-            
+
             klass->BaseClassSize = totalSize;
 
+            for (auto& baseMeta : s_Storage.Config.ClassMap[klassHash])
+            {
+                CapyClass* baseClass = capy_class_from_name(baseMeta.NameSpace, baseMeta.ClassName);
+                if (!baseClass) continue;
+
+                for (auto& [fieldHash, baseField] : baseClass->VTable->Fields)
+                {
+                    // Avoid overwriting derived fields if same name exists
+                    if (klass->VTable->Fields.contains(fieldHash)) continue;
+
+                    // Copy base field into derived
+                    auto copiedField = std::make_unique<CapyField>(*baseField);
+                    klass->VTable->Fields[fieldHash] = std::move(copiedField);
+                }
+            }
 
         }
     }
+
 }
 
 CapyLibrary* capy_domain_library_open(const std::string& binName)
@@ -491,7 +597,8 @@ CapyLibrary* capy_domain_library_open(const std::string& binName)
         return nullptr;
     }
 
-    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> classes;
+    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> collectedClasses;
+    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> collectedStructs;
 
     for (auto& sym : symbols)
     {
@@ -520,22 +627,49 @@ CapyLibrary* capy_domain_library_open(const std::string& binName)
             fullName += sym.ClassName;
 
 
+
         // Ensure class exists or create new
         CapyClass* klass = nullptr;
         uint32_t classHash = generate_hash(fullName);
-        auto it = classes.find(classHash);
-        if (it == classes.end())
+
+        if (s_Storage.Config.CoreDataStructures.contains(classHash))
+            continue;
+
+        bool found = false;
+
+        if (sym.IsStruct)
+        {
+            auto it = collectedStructs.find(classHash);
+            if (it == collectedStructs.end()) found = false;
+            else
+            {
+                klass = it->second.get();
+                found = true;
+            }
+        }
+        else
+        {
+            auto it = collectedClasses.find(classHash);
+            if (it == collectedClasses.end()) found = false;
+            else
+            {
+                klass = it->second.get();
+                found = true;
+            }
+        }
+
+        if (!found)
         {
             auto newKlass = std::make_unique<CapyClass>();
             newKlass->NameSpace = sym.Namespace;
             newKlass->ClassName = sym.ClassName;
+            newKlass->IsStruct = sym.IsStruct;
             newKlass->VTable = std::make_unique<CapyVTable>();
             klass = newKlass.get();
-            classes[classHash] = std::move(newKlass);
-        }
-        else
-        {
-            klass = it->second.get();
+            if (sym.IsStruct)
+                collectedStructs[classHash] = std::move(newKlass);
+            else
+                collectedClasses[classHash] = std::move(newKlass);
         }
 
         if (sym.IsVariable)
@@ -545,7 +679,7 @@ CapyLibrary* capy_domain_library_open(const std::string& binName)
             field->FieldType = string_to_value_type(sym.ReturnType);
             field->FieldTypeString = sym.ReturnType;
             field->Offset = sym.Offset;
-            klass->ClassSize += sym.Offset;
+            field->Size = type_size(field->FieldType);
             field->ClassMember = sym.IsVariable && sym.IsClassInstance;
             field->SymbolMetaData = sym;
             uint32_t fieldHash = generate_hash(sym.Name);
@@ -575,7 +709,8 @@ CapyLibrary* capy_domain_library_open(const std::string& binName)
         }
     }
 
-    image->Classes = std::move(classes);
+    image->Classes = std::move(collectedClasses);
+    image->Structures = std::move(collectedStructs);
 
     std::unique_ptr<CapyLibrary> library = std::make_unique<CapyLibrary>(std::move(image));
     library->SymbolInstance = std::move(instance);
@@ -641,8 +776,8 @@ CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath)
         std::cerr << "DLOPEN ERROR: " << dlerror() << "\n";
         return nullptr;
     }
-
-    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> classes;
+    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> collectedClasses;
+    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> collectedStructs;
 
     for (auto& sym : symbols)
     {
@@ -671,22 +806,50 @@ CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath)
             fullName += sym.ClassName;
 
 
+
         // Ensure class exists or create new
         CapyClass* klass = nullptr;
         uint32_t classHash = generate_hash(fullName);
-        auto it = classes.find(classHash);
-        if (it == classes.end())
+
+        s_Storage.Config.CoreDataStructures[classHash] = { sym.Namespace, sym.ClassName };
+
+        std::cout << "Core Data Structure: " << sym.Namespace << "::" << sym.ClassName << " ADDED\n";
+
+        bool found = false;
+
+        if (sym.IsStruct)
+        {
+            auto it = collectedStructs.find(classHash);
+            if (it == collectedStructs.end()) found = false;
+            else
+            {
+                klass = it->second.get();
+                found = true;
+            }
+        }
+        else
+        {
+            auto it = collectedClasses.find(classHash);
+            if (it == collectedClasses.end()) found = false;
+            else
+            {
+                klass = it->second.get();
+                found = true;
+            }
+        }
+
+        if (!found)
         {
             auto newKlass = std::make_unique<CapyClass>();
             newKlass->NameSpace = sym.Namespace;
             newKlass->ClassName = sym.ClassName;
+            newKlass->IsStruct = sym.IsStruct;
             newKlass->VTable = std::make_unique<CapyVTable>();
             klass = newKlass.get();
-            classes[classHash] = std::move(newKlass);
-        }
-        else
-        {
-            klass = it->second.get();
+            if (sym.IsStruct)
+                collectedStructs[classHash] = std::move(newKlass);
+            else
+                collectedClasses[classHash] = std::move(newKlass);
         }
 
         if (sym.IsVariable)
@@ -696,7 +859,7 @@ CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath)
             field->FieldType = string_to_value_type(sym.ReturnType);
             field->FieldTypeString = sym.ReturnType;
             field->Offset = sym.Offset;
-            klass->ClassSize += sym.Offset;
+            field->Size = type_size(field->FieldType);
             field->ClassMember = sym.IsVariable && sym.IsClassInstance;
             field->SymbolMetaData = sym;
             uint32_t fieldHash = generate_hash(sym.Name);
@@ -726,7 +889,8 @@ CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath)
         }
     }
 
-    image->Classes = std::move(classes);
+    image->Classes = std::move(collectedClasses);
+    image->Structures = std::move(collectedStructs);
 
     std::unique_ptr<CapyLibrary> library = std::make_unique<CapyLibrary>(std::move(image));
     library->SymbolInstance = std::move(instance);
@@ -790,6 +954,9 @@ CapyClass* capy_class_from_name(CapyImage* i, const std::string& nameSpace, cons
     if (i->Classes.find(classHash) != i->Classes.end())
         return i->Classes.at(classHash).get();
 
+    if (i->Structures.find(classHash) != i->Structures.end())
+        return i->Structures.at(classHash).get();
+
     return nullptr;
 }
 
@@ -803,6 +970,8 @@ CapyClass* capy_class_from_name(const std::string& nameSpace, const std::string&
     else if (!className.empty())
         fullName += className;
 
+    std::cout << fullName << "\n";
+
     uint32_t classHash = generate_hash(fullName);
     for (auto& [_, libraries] : s_Storage.Active.Runtime->Libraries)
     {
@@ -810,6 +979,9 @@ CapyClass* capy_class_from_name(const std::string& nameSpace, const std::string&
 
         if (i->Classes.find(classHash) != i->Classes.end())
             return i->Classes.at(classHash).get();
+
+        if (i->Structures.find(classHash) != i->Structures.end())
+            return i->Structures.at(classHash).get();
     }
 
     return nullptr;

@@ -75,7 +75,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         return;
     if (is_classname && !name.empty() && strs_n_equal(name, cfg.IgnoredClassNames))
         return;
-    if (is_structure)
+    if (is_structure && !name.empty() && strs_n_equal(name, cfg.IgnoredClassNames))
         return;
 
     if (is_scope && !name.empty())
@@ -91,7 +91,6 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
                 dwarf::die base_die = child[dwarf::DW_AT::type].as_reference();
                 std::string base_name = get_short_name(base_die);
                 
-                // Size - 2 for namespace
                 size_t vectorSize = scope_stack.size();
 
                 std::vector<std::string> namespaceScope(scope_stack);
@@ -121,6 +120,48 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
 
         uint32_t nameHash = generate_hash(qualified_name);
         storage.Config.ClassMap[nameHash] = classes;
+    }
+
+    if (is_structure)
+    {
+        std::vector<BaseClasses> classes;
+        for (auto& child : d)
+        {
+            if (child.tag == dwarf::DW_TAG::inheritance && child.has(dwarf::DW_AT::type))
+            {
+                dwarf::die base_die = child[dwarf::DW_AT::type].as_reference();
+                std::string base_name = get_short_name(base_die);
+                
+                size_t vectorSize = scope_stack.size();
+
+                std::vector<std::string> namespaceScope(scope_stack);
+
+                namespaceScope.pop_back();
+
+
+                std::string qualified_name;
+                for (size_t i = 0; i < namespaceScope.size(); ++i) {
+                    if (i > 0) qualified_name += "::";
+                    qualified_name += namespaceScope[i];
+                }
+
+                classes.push_back({ qualified_name, base_name});
+                storage.Config.KnownStructNames.push_back(base_name);
+            }
+        }
+
+        storage.Config.KnownStructNames.push_back(name);
+
+        std::vector<std::string> full_scope(scope_stack);
+
+        std::string qualified_name;
+        for (size_t i = 0; i < full_scope.size(); ++i) {
+            if (i > 0) qualified_name += "::";
+            qualified_name += full_scope[i];
+        }
+
+        uint32_t nameHash = generate_hash(qualified_name);
+        storage.Config.StructMap[nameHash] = classes;
     }
 
     

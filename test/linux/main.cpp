@@ -7,6 +7,7 @@
 #include <dlfcn.h>
 #include <ffi.h>
 
+#include <signal.h>
 
 class CapyWrapper
 {
@@ -106,8 +107,7 @@ int main(int argc, char** argv)
     CapyMethod* PrintBaseIntMethod = TestClassWrapper.GetMethod("PrintBaseInt");
 
     if (!TestClassWrapper.InvokeMethod(PrintBaseIntMethod))
-        std::cout << "failed to invoke\n";
-    
+        raise(SIGTRAP);
     while (true) 
     {
         if (capy_jit_poll())

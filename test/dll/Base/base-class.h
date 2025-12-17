@@ -14,14 +14,14 @@ namespace DLL
     public:
         Base();
 
-        int Add(int a, int b)
-        {
-            return Internal_Add(a, b);
-        }
+        int Add(int a, int b);
 
         DataStruct m_Data;
 
     protected:
         int m_TestInteger;
+        int m_Test2;
+        int m_Test3;
+
     };
 }
