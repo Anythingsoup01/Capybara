@@ -825,7 +825,7 @@ void capy_field_data_get(void* instance, CapyClass* cc, const std::string& field
 
     if (instance)
     {
-        void* ptr = static_cast<char*>(instance) + f->Offset;
+        void* ptr = static_cast<char*>(instance) + f->Offset + cc->BaseClassSize;
         memcpy(value, ptr, type_size(f->FieldType));
     }
     else
@@ -855,7 +855,7 @@ void capy_field_data_set(void* instance, CapyClass* cc, const std::string& field
     if (!f) return;
 
     if (instance) {
-        void* ptr = static_cast<char*>(instance) + f->Offset;
+        void* ptr = static_cast<char*>(instance) + f->Offset + cc->BaseClassSize;
         memcpy(ptr, value, type_size(f->FieldType));
     } else {
         memcpy(f->DefaultData.raw_ptr(), value, type_size(f->FieldType));
@@ -1010,7 +1010,7 @@ CapyObject* capy_instantiate_object(CapyClass* klass)
     if (!mem)
         return nullptr;
 
-    memset(mem, 0, klass->ClassSize);
+    memset(mem, 0, klass->ClassSize + klass->BaseClassSize);
     auto obj = std::make_unique<CapyObject>(mem, klass);
 
     CapyObject* raw = obj.get();
