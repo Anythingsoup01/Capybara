@@ -16,6 +16,12 @@ namespace DLL
         void Test() {}
     };
 
+    void Test::PrintBaseInt()
+    {
+        printf("Got: %d As the m_TestInteger\n", m_TestInteger);
+        printf("Got: %d As the m_DataStruct.Daddy\n", m_Data.Daddy);
+    }
+
     void Test::Print(const char* msg)
     {
         if (msg)
@@ -41,5 +47,6 @@ namespace DLL
     {
         printf("%d + %d = %d\n", a, b, Add(a, b));
     }
+
 }
 

@@ -107,7 +107,6 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
 
                 classes.push_back({ qualified_name, base_name});
                 storage.Config.KnownClassNames.push_back(base_name);
-
             }
         }
 
@@ -246,6 +245,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         _SymbolMetaData sym;
         std::string name = get_short_name(d);
         if (strs_n_equal(name, cfg.IgnoredNames)) return;
+
 
         sym.Name = name;
         sym.Namespace = qualified_name;

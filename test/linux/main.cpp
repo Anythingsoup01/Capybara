@@ -34,6 +34,18 @@ public:
 		return capy_function_call_from_method(method, localCopy);
 	}
 
+    void SetFieldData(const std::string& fieldName, void* data)
+    {
+        auto& fields = m_CapyClass->VTable->Fields;
+        uint32_t fieldID = generate_hash(fieldName);
+        auto it = fields.find(fieldID);
+        if (it == fields.end()) return;
+
+        CapyField* cf = it->second.get();
+
+        capy_field_data_set(m_ClassObject, cf, data);
+    }
+
 private:
     CapyObject* m_ClassObject;
     CapyClass* m_CapyClass;
@@ -88,16 +100,14 @@ int main(int argc, char** argv)
 
     CapyWrapper TestClassWrapper(img, "DLL", "Test");
 
-    CapyMethod* PrintMethod = TestClassWrapper.GetMethod("Print");
-    CapyMethod* PrintAgainMethod = TestClassWrapper.GetMethod("PrintAgain");
-    CapyMethod* AddMethod = TestClassWrapper.GetMethod("CustomAdd");
+    int data = 10;
+    TestClassWrapper.SetFieldData("m_TestInteger", &data);
 
-    TestClassWrapper.InvokeMethod(PrintMethod, {"This is my message!"});
+    CapyMethod* PrintBaseIntMethod = TestClassWrapper.GetMethod("PrintBaseInt");
 
-    TestClassWrapper.InvokeMethod(PrintAgainMethod);
-
-    TestClassWrapper.InvokeMethod(AddMethod, {10, 15});
-
+    if (!TestClassWrapper.InvokeMethod(PrintBaseIntMethod))
+        std::cout << "failed to invoke\n";
+    
     while (true) 
     {
         if (capy_jit_poll())

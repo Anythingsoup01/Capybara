@@ -43,7 +43,7 @@ static void update_symbol_namespaces(std::vector<_SymbolMetaData>& symbols)
 
 static std::vector<std::string> s_IGNORED_NAMESPACES = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" };
 static std::vector<std::string> s_IGNORED_CLASSNAMES = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_", "__pthread", "timespec", "lconv", "_M_" };
-static std::vector<std::string> s_IGNORED_NAMES = { "<anon>", "gp_offset", "fp_offset", "overflow_arg_area", "reg_save_area", "tm_", "_vptr.", "__", "_IO", "_flags", "quot", "_markers", "_chain", "_short", "_old_offset", "_cur_column", "_vtable_offset", "_shortbuf", "_lock", "_offset", "_codecvt", "_wide_data", "_freeres", "_prevchain", "_mode", "_unused", "_total_written", "decimal_point", "thousands_sep", "goruping", "int_curr_symbol", "currency_symbol", "mon_decimal_point", "mon_thousands_sep", "mon_grouping", "positive_sign", "negative_sign", "int_frac_digits", "frac_digits", "p_cs_precedes", "p_sep_by_space", "n_cs_", "n_sep_", "p_sign_", "n_sign_", "int_p_", "int_n_", "rem", "_fileno", "grouping" };
+static std::vector<std::string> s_IGNORED_NAMES = { "<anon>", "gp_offset", "fp_offset", "overflow_arg_area", "reg_save_area", "tm_", "__", "_IO", "_flags", "quot", "_markers", "_chain", "_short", "_old_offset", "_cur_column", "_vtable_offset", "_shortbuf", "_lock", "_offset", "_codecvt", "_wide_data", "_freeres", "_prevchain", "_mode", "_unused", "_total_written", "decimal_point", "thousands_sep", "goruping", "int_curr_symbol", "currency_symbol", "mon_decimal_point", "mon_thousands_sep", "mon_grouping", "positive_sign", "negative_sign", "int_frac_digits", "frac_digits", "p_cs_precedes", "p_sep_by_space", "n_cs_", "n_sep_", "p_sign_", "n_sign_", "int_p_", "int_n_", "rem", "_fileno", "grouping" };
 
 static std::string jit_get_compile_command(const std::filesystem::path& filePath)
 {
@@ -334,7 +334,7 @@ std::string capy_dump_domain()
         for (auto& [_, klass] : lib->Image->Classes)
         {
             std::string adjustedClassName = klass->ClassName.empty() ? "<Functions Only>" : klass->ClassName;
-            str.append("    Full Class Name: " + adjustedClassName + "\n");
+            str.append("    Full Class Name: " + adjustedClassName + " Derived Size: " + std::to_string(klass->ClassSize) + " Base Class Size: " + std::to_string(klass->BaseClassSize) +  "\n");
             CapyClass* klassPtr = klass.get();
             for (auto& [hash, sym] : klassPtr->VTable->Methods)
             {
@@ -414,9 +414,20 @@ void capy_reload_libraries_into_domain()
 
                 // If null there is no implementation, therefore no variables.
                 if (obtainedClass)
-                    totalSize += obtainedClass->BaseClassSize;
+                {
+                    totalSize += obtainedClass->ClassSize;
+                }
+
+                for (auto& [fieldID, field] : obtainedClass->VTable->Fields)
+                {
+                    klass->VTable->Fields[fieldID] = std::make_unique<CapyField>(std::move(*field));
+                }
+
             }
+            
             klass->BaseClassSize = totalSize;
+
+
         }
     }
 }
@@ -817,30 +828,23 @@ CapyField* capy_field_from_class(CapyClass* c, const std::string& fieldName)
     return c->VTable->Fields[fieldHash].get();
 }
 
-void capy_field_data_get(void* instance, CapyClass* cc, const std::string& fieldName, void* value)
+void capy_field_data_get(CapyObject* instance, CapyClass* cc, const std::string& fieldName, void* value)
 {
-    CapyField* f = capy_field_from_class(cc, fieldName);
+    auto* cd = s_Storage.Active.Runtime.get();
 
-    if (!f) return;
-
-    if (instance)
+    if (!cd)
     {
-        void* ptr = static_cast<char*>(instance) + f->Offset + cc->BaseClassSize;
-        memcpy(value, ptr, type_size(f->FieldType));
+        std::cerr << "ERROR: Domain not set!\nBe sure to call capy_jit_init!\n";
+        return;
     }
-    else
-    {
-        memcpy(value, f->DefaultData.raw_ptr(), type_size(f->FieldType));
-    }
-}
 
-void capy_field_data_get(void* instance, CapyField* cf, void* value)
-{
+    CapyField* cf = capy_field_from_class(cc, fieldName);
+
     if (!cf) return;
 
-    if (instance)
+    if (instance && instance->Memory)
     {
-        void* ptr = static_cast<char*>(instance) + cf->Offset;
+        void* ptr = static_cast<char*>(instance->Memory) + cf->Offset;
         memcpy(value, ptr, type_size(cf->FieldType));
     }
     else
@@ -849,20 +853,54 @@ void capy_field_data_get(void* instance, CapyField* cf, void* value)
     }
 }
 
-void capy_field_data_set(void* instance, CapyClass* cc, const std::string& fieldName, void* value)
+void capy_field_data_get(CapyObject* instance, CapyField* cf, void* value)
 {
-    CapyField* f = capy_field_from_class(cc, fieldName);
-    if (!f) return;
+    auto* cd = s_Storage.Active.Runtime.get();
 
-    if (instance) {
-        void* ptr = static_cast<char*>(instance) + f->Offset + cc->BaseClassSize;
-        memcpy(ptr, value, type_size(f->FieldType));
-    } else {
-        memcpy(f->DefaultData.raw_ptr(), value, type_size(f->FieldType));
+    if (!cd)
+    {
+        std::cerr << "ERROR: Domain not set!\nBe sure to call capy_jit_init!\n";
+        return;
+    }
+
+    if (!cf) return;
+
+    if (instance && instance->Memory)
+    {
+        void* ptr = static_cast<char*>(instance->Memory) + cf->Offset;
+        memcpy(value, ptr, type_size(cf->FieldType));
+    }
+    else
+    {
+        memcpy(value, cf->DefaultData.raw_ptr(), type_size(cf->FieldType));
     }
 }
 
-void capy_field_data_set(void* instance, CapyField* cf, void* value, int valueSizeOverride)
+void capy_field_data_set(CapyObject* instance, CapyClass* cc, const std::string& fieldName, void* value)
+{
+    auto* cd = s_Storage.Active.Runtime.get();
+
+    if (!cd)
+    {
+        std::cerr << "ERROR: Domain not set!\nBe sure to call capy_jit_init!\n";
+        return;
+    }
+
+    CapyField* cf = capy_field_from_class(cc, fieldName);
+    if (!cf) return;
+
+    if (instance && instance->Memory)
+    {
+        void* ptr = static_cast<char*>(instance->Memory) + cf->Offset;
+        memcpy(ptr, value, type_size(cf->FieldType));
+    }
+    else
+    {
+        memcpy(cf->DefaultData.raw_ptr(), value, type_size(cf->FieldType));
+    }
+}
+
+void capy_field_data_set(CapyObject* instance, CapyField* cf, void* value)
 {
     auto* cd = s_Storage.Active.Runtime.get();
 
@@ -883,9 +921,9 @@ void capy_field_data_set(void* instance, CapyField* cf, void* value, int valueSi
     size_t size = type_size(cf->FieldType);
 
 
-    if (instance)
+    if (instance && instance->Memory)
     {
-        void* ptr = static_cast<char*>(instance) + cf->Offset;
+        void* ptr = static_cast<char*>(instance->Memory) + cf->Offset;
         memcpy(ptr, value, size); // default memcpy
     }
     else
@@ -997,22 +1035,27 @@ CapyDomain* capy_get_root_domain()
     return cd;
 }
 
+constexpr size_t CLASS_ALIGNMENT = 16;
+
 CapyObject* capy_instantiate_object(CapyClass* klass)
 {
     if (!klass || klass->ClassSize == 0)
         return nullptr;
 
-    void* mem = std::aligned_alloc(
-        klass->Allignment,
-        (((klass->ClassSize + klass->BaseClassSize + klass->Allignment - 1) / klass->Allignment) * klass->Allignment)
-        );
+    // Compute total class size including base + derived padding
+    size_t derivedOwnSize = klass->ClassSize - klass->BaseClassSize; // fields added in derived
+    size_t offset = (klass->BaseClassSize + CLASS_ALIGNMENT - 1) & ~(CLASS_ALIGNMENT - 1); // base -> derived padding
 
+    size_t totalSize = (offset + derivedOwnSize + CLASS_ALIGNMENT - 1) & ~(CLASS_ALIGNMENT - 1);
+
+    // Allocate aligned memory
+    void* mem = std::aligned_alloc(CLASS_ALIGNMENT, totalSize);
     if (!mem)
         return nullptr;
 
-    memset(mem, 0, klass->ClassSize + klass->BaseClassSize);
-    auto obj = std::make_unique<CapyObject>(mem, klass);
+    std::memset(mem, 0, totalSize);
 
+    auto obj = std::make_unique<CapyObject>(mem, klass);
     CapyObject* raw = obj.get();
 
     std::string fullName;

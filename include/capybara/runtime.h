@@ -109,7 +109,7 @@ struct CapyField
     _SymbolMetaData SymbolMetaData;
 
     CapyField()
-        : SymHandle(nullptr),
+      : SymHandle(nullptr),
         FieldType(ValueType::VOID),         // or whatever “invalid” is in your enum
         Offset(0),
         ClassMember(false),
@@ -119,7 +119,7 @@ struct CapyField
     {}
     
     CapyField(const CapyField& other)
-        : SymHandle(nullptr),
+        : SymHandle(other.SymHandle),
           FieldType(other.FieldType),
           Offset(other.Offset),
           ClassMember(other.ClassMember),
