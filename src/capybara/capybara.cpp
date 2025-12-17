@@ -43,7 +43,7 @@ static void update_symbol_namespaces(std::vector<_SymbolMetaData>& symbols)
 
 static std::vector<std::string> s_IGNORED_NAMESPACES = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_" };
 static std::vector<std::string> s_IGNORED_CLASSNAMES = { "std", "__gnu", "<anon>", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "_IO_", "_G_", "__pthread", "timespec", "lconv", "_M_" };
-static std::vector<std::string> s_IGNORED_NAMES = { "<anon>", "gp_offset", "fp_offset", "overflow_arg_area", "reg_save_area", "tm_", "_vptr." };
+static std::vector<std::string> s_IGNORED_NAMES = { "<anon>", "gp_offset", "fp_offset", "overflow_arg_area", "reg_save_area", "tm_", "_vptr.", "__", "_IO", "_flags", "quot", "_markers", "_chain", "_short", "_old_offset", "_cur_column", "_vtable_offset", "_shortbuf", "_lock", "_offset", "_codecvt", "_wide_data", "_freeres", "_prevchain", "_mode", "_unused", "_total_written", "decimal_point", "thousands_sep", "goruping", "int_curr_symbol", "currency_symbol", "mon_decimal_point", "mon_thousands_sep", "mon_grouping", "positive_sign", "negative_sign", "int_frac_digits", "frac_digits", "p_cs_precedes", "p_sep_by_space", "n_cs_", "n_sep_", "p_sign_", "n_sign_", "int_p_", "int_n_", "rem", "_fileno", "grouping" };
 
 static std::string jit_get_compile_command(const std::filesystem::path& filePath)
 {
@@ -239,16 +239,10 @@ bool capy_jit_poll()
         capy_reload_domain();
 
 
-
-        CapyDomain* raw = new CapyDomain;
-        s_Storage.Active.Runtime.reset(raw);
-
-        for (auto& lib : jit.CoreBinaryPaths)
-        {
-            capy_domain_core_library_open(lib);
-        }
-
         capy_reload_libraries_into_domain();
+
+
+
         return true;
     }
     return false;
@@ -300,6 +294,13 @@ void capy_reload_domain()
             jit.JitThread.join();
     }
 
+    std::unordered_map<uint32_t, std::unique_ptr<CapyLibrary>> libCopy;
+
+    for (auto& [libID, lib] : active.Runtime->Libraries)
+        libCopy[libID] = std::make_unique<CapyLibrary>(*lib);
+
+    std::vector<std::string> coreLibStrings = active.Runtime->CoreLibraries;
+
     /* 2. Destroy domain */
     active.Runtime.reset();
 
@@ -310,6 +311,13 @@ void capy_reload_domain()
     /* 4. Restart JIT */
     jit.JitRunning.store(true);
     jit.JitThread = std::thread(jit_worker);
+
+    CapyDomain* raw = new CapyDomain;
+    s_Storage.Active.Runtime.reset(raw);
+
+    s_Storage.Active.Runtime->Libraries = std::move(libCopy);
+    s_Storage.Active.Runtime->CoreLibraries = coreLibStrings;
+
 }
 
 std::string capy_dump_domain()
@@ -399,6 +407,21 @@ void capy_reload_libraries_into_domain()
             capy_domain_library_open(entry.path().filename());
         }
     }
+
+    for (auto& [_, lib] : cd->Libraries)
+    {
+        auto* image = lib->Image.get();
+        for (auto& [klassHash, klass] : image->Classes)
+        {
+
+            uint32_t totalSize = 0;
+            for (auto& baseClass : s_Storage.Config.ClassMap[klassHash])
+            {
+                totalSize += capy_class_from_name(baseClass.NameSpace, baseClass.ClassName)->ClassSize;
+            }
+            klass->BaseClassSize = totalSize;
+        }
+    }
 }
 
 CapyLibrary* capy_domain_library_open(const std::string& binName)
@@ -410,8 +433,7 @@ CapyLibrary* capy_domain_library_open(const std::string& binName)
         std::cerr << "ERROR: Domain not set!\nBe sure to call capy_jit_init!\n";
         return nullptr;
     }
-
-
+    
     if (s_Storage.Config.BinaryPath.empty())
         s_Storage.Config.BinaryPath = std::filesystem::current_path();
 
@@ -567,7 +589,6 @@ CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath)
     }
 
 
-
     int fd = open(binPath.c_str(), O_RDONLY);
     if (fd < 0)
     {
@@ -667,6 +688,7 @@ CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath)
             field->FieldType = string_to_value_type(sym.ReturnType);
             field->FieldTypeString = sym.ReturnType;
             field->Offset = sym.Offset;
+            klass->ClassSize += sym.Offset;
             field->ClassMember = sym.IsVariable && sym.IsClassInstance;
             field->SymbolMetaData = sym;
             uint32_t fieldHash = generate_hash(sym.Name);
@@ -695,6 +717,7 @@ CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath)
             klass->VTable->Methods[methodHash] = std::move(method);
         }
     }
+
     image->Classes = std::move(classes);
 
     std::unique_ptr<CapyLibrary> library = std::make_unique<CapyLibrary>(std::move(image));
@@ -760,6 +783,29 @@ CapyClass* capy_class_from_name(CapyImage* i, const std::string& nameSpace, cons
         return i->Classes.at(classHash).get();
 
     return nullptr;
+}
+
+CapyClass* capy_class_from_name(const std::string& nameSpace, const std::string& className)
+{
+    std::string fullName;
+    if (!nameSpace.empty() && !className.empty())
+        fullName += nameSpace + "::" + className;
+    else if (!nameSpace.empty())
+        fullName += nameSpace;
+    else if (!className.empty())
+        fullName += className;
+
+    uint32_t classHash = generate_hash(fullName);
+    for (auto& [_, libraries] : s_Storage.Active.Runtime->Libraries)
+    {
+        CapyImage* i = libraries->Image.get();
+
+        if (i->Classes.find(classHash) != i->Classes.end())
+            return i->Classes.at(classHash).get();
+    }
+
+    return nullptr;
+
 }
 
 CapyMethod* capy_method_from_class(CapyClass* c, const std::string& functionName)
@@ -961,7 +1007,7 @@ CapyObject* capy_instantiate_object(CapyClass* klass)
 
     void* mem = std::aligned_alloc(
         klass->Allignment,
-        ((klass->ClassSize + klass->Allignment - 1) / klass->Allignment) * klass->Allignment
+        (((klass->ClassSize + klass->Allignment - 1) / klass->Allignment) * klass->Allignment)
         );
 
     if (!mem)
@@ -969,8 +1015,6 @@ CapyObject* capy_instantiate_object(CapyClass* klass)
 
     memset(mem, 0, klass->ClassSize);
     auto obj = std::make_unique<CapyObject>(mem, klass);
-    obj->Klass = klass;
-    obj->Memory = mem;
 
     CapyObject* raw = obj.get();
 

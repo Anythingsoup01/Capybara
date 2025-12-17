@@ -64,7 +64,6 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
     auto& cfg = storage.Config;
     std::string name = get_short_name(d);
 
-    // Keep track of scopes
     bool is_namespace = d.tag == dwarf::DW_TAG::namespace_;
     bool is_classname = d.tag == dwarf::DW_TAG::class_type;
     bool is_structure = d.tag == dwarf::DW_TAG::structure_type;
@@ -72,59 +71,82 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
 
     bool is_scope = is_namespace || is_classname || is_structure || is_union;
 
-    if (is_namespace && !name.empty())
-    {
-        if (strs_n_equal(name, cfg.IgnoredNamespaces))
-            return;
-    }
-    if (is_classname && !name.empty())
-    {
-        if (strs_n_equal(name, cfg.IgnoredClassNames))
-            return;
-    }
-    if (is_structure)
-    {
-        // TODO: IMPLEMENT THIS
+    if (is_namespace && !name.empty() && strs_n_equal(name, cfg.IgnoredNamespaces))
         return;
-    }
+    if (is_classname && !name.empty() && strs_n_equal(name, cfg.IgnoredClassNames))
+        return;
+    if (is_structure)
+        return;
 
     if (is_scope && !name.empty())
         scope_stack.push_back(name);
 
-    // Process functions
-    if (d.tag == dwarf::DW_TAG::subprogram) {
+    if (is_classname)
+    {
+        std::vector<BaseClasses> classes;
+        for (auto& child : d)
+        {
+            if (child.tag == dwarf::DW_TAG::inheritance && child.has(dwarf::DW_AT::type))
+            {
+                dwarf::die base_die = child[dwarf::DW_AT::type].as_reference();
+                std::string base_name = get_short_name(base_die);
+                
+                // Size - 2 for namespace
+                size_t vectorSize = scope_stack.size();
 
-        if (scope_stack.empty() && cfg.IgnoreEmptyNamespaces)
-            return;
+                std::vector<std::string> namespaceScope(scope_stack);
 
-        // This removes any mangled symbols, not sure why
-        // there are any in -gdwarf-4 but there is :(
-        if (strncmp(name.c_str(), "_ZN", 3) == 0)
-            return;
+                namespaceScope.pop_back();
 
 
+                std::string qualified_name;
+                for (size_t i = 0; i < namespaceScope.size(); ++i) {
+                    if (i > 0) qualified_name += "::";
+                    qualified_name += namespaceScope[i];
+                }
+
+                classes.push_back({ qualified_name, base_name});
+                storage.Config.KnownClassNames.push_back(base_name);
+
+            }
+        }
+
+        storage.Config.KnownClassNames.push_back(name);
         std::vector<std::string> full_scope(scope_stack);
 
         std::string qualified_name;
-        for (size_t i = 0; i < full_scope.size(); ++i)
-        {
+        for (size_t i = 0; i < full_scope.size(); ++i) {
             if (i > 0) qualified_name += "::";
             qualified_name += full_scope[i];
         }
 
-        // Intentionally leaving the class name empty
-        // If we get an instance of Class* this,
-        // then we will convert it to the ClassName.
+        uint32_t nameHash = generate_hash(qualified_name);
+        storage.Config.ClassMap[nameHash] = classes;
+    }
+
+    
+
+    // ---- Process functions ----
+    if (d.tag == dwarf::DW_TAG::subprogram) {
+        if (scope_stack.empty() && cfg.IgnoreEmptyNamespaces) return;
+        if (strncmp(name.c_str(), "_ZN", 3) == 0) return;
+
+        std::string qualified_name;
+        for (size_t i = 0; i < scope_stack.size(); ++i) {
+            if (i > 0) qualified_name += "::";
+            qualified_name += scope_stack[i];
+        }
+
         _SymbolMetaData sym;
-        std::string name = get_short_name(d);
-        if (strs_n_equal(name, {"<anon>"}))
-            return;
+        if (strs_n_equal(name, {"<anon>"})) return;
+
         sym.Name = name;
         sym.Namespace = qualified_name;
         sym.ReturnType = get_return_type(d);
         sym.IsVariable = false;
         sym.IsClassInstance = false;
         sym.Offset = 0;
+
 
 
         for (auto& child : d)
@@ -180,11 +202,10 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
 
     }
 
+
+    // ---- Process member variables ----
     if (d.tag == dwarf::DW_TAG::member)
     {
-        if (scope_stack.empty() && cfg.IgnoreEmptyNamespaces)
-            return;
-
         std::vector<std::string> full_scope(scope_stack);
 
         std::string qualified_name;
@@ -224,8 +245,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         // then we will convert it to the ClassName.
         _SymbolMetaData sym;
         std::string name = get_short_name(d);
-        if (strs_n_equal(name, cfg.IgnoredNames))
-            return;
+        if (strs_n_equal(name, cfg.IgnoredNames)) return;
 
         sym.Name = name;
         sym.Namespace = qualified_name;
@@ -234,8 +254,8 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         sym.IsClassInstance = true;
         sym.Offset = offset;
 
-        outSymbols.push_back(sym);
 
+        outSymbols.push_back(sym);
     }
 
     if (d.tag == dwarf::DW_TAG::variable)
@@ -266,9 +286,9 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         sym.Offset = 0;
 
         outSymbols.push_back(sym);
-
     }
 
+    // ---- Recurse into children ----
     for (auto &child : d)
         traverse_and_collect(child, scope_stack, storage, outSymbols);
 

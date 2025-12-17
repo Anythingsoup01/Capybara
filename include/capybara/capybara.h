@@ -91,6 +91,10 @@ CapyImage* capy_library_get_image(CapyLibrary* cl);
 // Provide the namespace and class name to retrieve the wanted class
 CapyClass* capy_class_from_name(CapyImage* ci, const std::string& nameSpace, const std::string& className);
 
+// This function is used to get a class from every library and image,
+// Provide the namespace and class name to retrieve the wanted class
+CapyClass* capy_class_from_name(const std::string& nameSpace, const std::string& className);
+//
 // This function is used to get a method from a given class,
 // all that is needed to know is the class name and an understanding of how many
 // parameters are in the class along with the actual types for the parameters
@@ -121,5 +125,6 @@ void* capy_function_call_from_method(CapyMethod* cm, const std::vector<RuntimeVa
 // after loading libraries into the domain
 void capy_add_internal_call(const std::string& name, void* functionSymbol);
 
-// This function let's you create an object instance
+// This function let's you create an object instance, if the item has a base class
+// and it has values there, you need account for it in the hiddenValues variable.
 CapyObject* capy_instantiate_object(CapyClass* klass);

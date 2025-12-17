@@ -15,5 +15,7 @@ namespace DLL
         {
             return Internal_Add(a, b);
         }
+    private:
+        int m_TestInteger;
     };
 }

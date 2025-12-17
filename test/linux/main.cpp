@@ -70,7 +70,6 @@ int main(int argc, char** argv)
 {
     auto* cd = capy_jit_init();
 
-    ADD_INTERNAL_CALL(Internal_Add);
     capy_jit_set_source_path("test/dll/Test", CustomFileEventCallback, true);
 
     capy_jit_set_binary_path("test/dll/Test/.build");
@@ -85,6 +84,7 @@ int main(int argc, char** argv)
 
     CapyImage* img = capy_library_get_image(lib);
 
+    ADD_INTERNAL_CALL(Internal_Add);
 
     CapyWrapper TestClassWrapper(img, "DLL", "Test");
 

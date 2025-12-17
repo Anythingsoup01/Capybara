@@ -117,6 +117,16 @@ struct CapyField
         DefaultData{},                      // zero initialize RuntimeValue
         SymbolMetaData{}                    // uses its own default ctor
     {}
+    
+    CapyField(const CapyField& other)
+        : SymHandle(nullptr),
+          FieldType(other.FieldType),
+          Offset(other.Offset),
+          ClassMember(other.ClassMember),
+          FieldTypeString(other.FieldTypeString),
+          DefaultData(other.DefaultData),
+          SymbolMetaData(other.SymbolMetaData)
+    {}
 };
 
 struct CapyMethod
@@ -137,6 +147,15 @@ struct CapyMethod
         ClassMember(false),
         SymbolMetaData{}
     {}
+
+    CapyMethod(const CapyMethod& other)
+        : SymHandle(nullptr),
+          ReturnType(other.ReturnType),
+          Parameters(other.Parameters),
+          ParameterTypeStrings(other.ParameterTypeStrings),
+          ClassMember(other.ClassMember),
+          SymbolMetaData(other.SymbolMetaData)
+    {}
 };
 
 struct CapyVTable
@@ -148,6 +167,15 @@ struct CapyVTable
         : Methods(),
         Fields()
     {}
+
+    CapyVTable(const CapyVTable& other)
+    {
+        for (const auto& [id, method] : other.Methods)
+            Methods[id] = std::make_unique<CapyMethod>(*method);
+
+        for (const auto& [id, field] : other.Fields)
+            Fields[id] = std::make_unique<CapyField>(*field);
+    }
 };
 
 struct CapyClass
@@ -156,6 +184,7 @@ struct CapyClass
     std::string ClassName;
 
     std::unique_ptr<CapyVTable> VTable;
+    uint64_t BaseClassSize = 0;
 
     size_t ClassSize = 0;
     size_t Allignment = 16;
@@ -165,6 +194,17 @@ struct CapyClass
         ClassName(""),
         VTable(nullptr)
     {}
+
+    CapyClass(const CapyClass& other)
+        : NameSpace(other.NameSpace),
+          ClassName(other.ClassName),
+          BaseClassSize(other.BaseClassSize),
+          ClassSize(other.ClassSize),
+          Allignment(other.Allignment)
+    {
+        if (other.VTable)
+            VTable = std::make_unique<CapyVTable>(*other.VTable);
+    }
 };
 
 struct CapyImage {
@@ -173,6 +213,12 @@ struct CapyImage {
     CapyImage()
         : Classes()
     {}
+
+    CapyImage(const CapyImage& other)
+    {
+        for (const auto& [id, klass] : other.Classes)
+            Classes[id] = std::make_unique<CapyClass>(*klass);
+    }
 };
 
 struct CapyLibrary {
@@ -197,6 +243,17 @@ struct CapyLibrary {
 
     CapyLibrary(std::unique_ptr<CapyImage> image)
         : Image(std::move(image)) {}
+
+    CapyLibrary(const CapyLibrary& other)
+        : Name(other.Name),
+          LibPath(other.LibPath),
+          SymbolInstance(nullptr),
+          IsCore(other.IsCore),
+          OriginalRelocs(other.OriginalRelocs)
+    {
+        if (other.Image)
+            Image = std::make_unique<CapyImage>(*other.Image);
+    }
 
     ~CapyLibrary()
     {
@@ -262,6 +319,18 @@ struct CapyDomain {
     {}
 };
 
+enum class DomainReloadPhase {
+    Idle,
+    LoadingCore,
+    LoadingLibraries,
+    Ready
+};
+
+struct BaseClasses
+{
+    std::string NameSpace;
+    std::string ClassName;
+};
 
 // TODO: Delete this if not needed
 template<typename... Ts>
@@ -289,12 +358,14 @@ struct CapyActiveDomain {
     CapyJITStorage JITStorage;
 
     std::unordered_map<uint32_t, void*> InternalCalls;
+    std::mutex DomainReloadMutex;
 };
 
 struct CapyConfigStorage
 {
     bool IgnoreEmptyNamespaces = false;
 
+    std::unordered_map<uint32_t, std::vector<BaseClasses>> ClassMap;
     std::vector<std::string> KnownClassNames;
     std::vector<std::string> IgnoredNamespaces;
     std::vector<std::string> IgnoredClassNames;
