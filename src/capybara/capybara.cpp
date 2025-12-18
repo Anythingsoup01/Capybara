@@ -640,7 +640,6 @@ void capy_reload_libraries_into_domain()
                 if (field->SymbolMetaData.ClassName.empty())
                     fullName = field->SymbolMetaData.ClassName;
                 fullName += "::" + field->SymbolMetaData.Name;
-                std::cout << fullName << "(" << field->Offset << ")\n";
 
                 uint32_t fieldHash = generate_hash(fullName);
                 klass->VTable->Fields[fieldHash] = std::make_unique<CapyField>(*field);
