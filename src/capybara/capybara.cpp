@@ -576,9 +576,13 @@ void capy_reload_libraries_into_domain()
             {
                 if (field->Size == 0)
                 {
-                    uint64_t fieldSize =  capy_get_class_or_struct_size(field->SymbolMetaData.Namespace, field->SymbolMetaData.ReturnType);
-                    totalSize += fieldSize;
-                    field->Size = fieldSize;
+                    auto* obtainedClass = capy_class_from_name(field->SymbolMetaData.Namespace, field->SymbolMetaData.ClassName);
+
+                    if (obtainedClass)
+                    {
+                        totalSize += obtainedClass->ClassSize;
+                        field->Size = obtainedClass->ClassSize;
+                    }
                 }
                 else
                 {

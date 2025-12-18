@@ -18,7 +18,7 @@ namespace DLL
 
     void Test::PrintBaseInt()
     {
-        printf("Got: %u\n", m_Base.ID);
+        printf("Got: %u\n", m_Base);
     }
 
     void Test::Print(const char* msg)
