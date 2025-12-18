@@ -576,13 +576,9 @@ void capy_reload_libraries_into_domain()
             {
                 if (field->Size == 0)
                 {
-                    auto* obtainedClass = capy_class_from_name(field->SymbolMetaData.Namespace, field->SymbolMetaData.ClassName);
-
-                    if (obtainedClass)
-                    {
-                        totalSize += obtainedClass->ClassSize;
-                        field->Size = obtainedClass->ClassSize;
-                    }
+                    uint64_t fieldSize = capy_get_class_or_struct_size(field->SymbolMetaData.Namespace, field->SymbolMetaData.ReturnType);
+                    totalSize += fieldSize;
+                    field->Size = fieldSize;
                 }
                 else
                 {
@@ -648,6 +644,29 @@ void capy_reload_libraries_into_domain()
                 uint32_t fieldHash = generate_hash(fullName);
                 klass->VTable->Fields[fieldHash] = std::make_unique<CapyField>(*field);
             }
+        }
+    }
+
+    for (auto& [_, lib] : cd->Libraries)
+    {
+        for (auto& [klassHash, klass] : lib->Image->Classes)
+        {
+            uint64_t totalSize = 0;
+            for (auto& [_, field] : klass->VTable->Fields)
+            {
+                if (field->Size == 0)
+                {
+                    uint64_t fieldSize = capy_get_class_or_struct_size(field->SymbolMetaData.Namespace, field->SymbolMetaData.ReturnType);
+                    totalSize += fieldSize;
+                    field->Size = fieldSize;
+                }
+                else
+                {
+                    totalSize += field->Size;
+                }
+
+            }
+            klass->ClassSize = totalSize;
         }
     }
 
