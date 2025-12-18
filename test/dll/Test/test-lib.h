@@ -18,6 +18,15 @@ namespace DLL
         void UpdateCheck(int16_t test);
 
     private:
-        const char* m_PreviousMessage;
+        Base m_Base;
+        uint64_t ID;
+
+        float m_FloatOne;
+        float m_FloatTwo;
+        float m_FloatThree;
+
+        bool m_BoolOne;
+        bool m_BoolTwo;
+        bool m_BoolThree;
     };
 }

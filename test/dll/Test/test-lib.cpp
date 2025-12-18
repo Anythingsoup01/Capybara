@@ -18,27 +18,15 @@ namespace DLL
 
     void Test::PrintBaseInt()
     {
-        printf("Got: %d As the m_TestInteger\n", m_TestInteger);
-        printf("Got: %d As the m_DataStruct.Daddy\n", m_Data.Daddy);
+        printf("Got: %u\n", m_Base.ID);
     }
 
     void Test::Print(const char* msg)
     {
-        if (msg)
-        {
-            m_PreviousMessage = msg;
-        }
-        else
-        {
-            m_PreviousMessage = "(null)";
-        }
-
-        printf( "Got : %s\n", msg ? msg : "(null)");
     }
 
     void Test::PrintAgain()
     {
-        printf( "Reprinting : %s\n", m_PreviousMessage);
     }
 
     void Test::UpdateCheck(int16_t test) {}

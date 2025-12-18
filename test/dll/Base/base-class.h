@@ -1,12 +1,13 @@
 #pragma once
+#include <cstdint>
 #include "internal_calls.h"
 
 
 namespace DLL
 {
-    struct DataStruct
+    struct BigChungus
     {
-        int Daddy;
+        uint64_t Doc;
     };
 
     class Base
@@ -16,12 +17,7 @@ namespace DLL
 
         int Add(int a, int b);
 
-        DataStruct m_Data;
 
-    protected:
-        int m_TestInteger;
-        int m_Test2;
-        int m_Test3;
-
+        uint32_t ID;
     };
 }

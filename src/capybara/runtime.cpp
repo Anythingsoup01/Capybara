@@ -38,6 +38,12 @@ ValueType string_to_value_type(const std::string& value)
     if (strs_n_equal(value, { "float" }))
         return ValueType::FLOAT;
 
+    if (strs_n_equal(value, { "double" }))
+        return ValueType::DOUBLE;
+
+    if (strs_n_equal(value, { "bool" }))
+        return ValueType::BOOL;
+    
     return ValueType::VOID;
 }
 
@@ -52,6 +58,8 @@ size_t type_size(ValueType type)
         case ValueType::UINT32: return sizeof(uint32_t);
         case ValueType::UINT64: return sizeof(uint64_t);
         case ValueType::FLOAT: return sizeof(float);
+        case ValueType::DOUBLE: return sizeof(double);
+        case ValueType::BOOL: return sizeof(bool);
         case ValueType::POINTER: return sizeof(void*);
         case ValueType::VOID: return 0;
     }

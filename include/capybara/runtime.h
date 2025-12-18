@@ -25,8 +25,7 @@ enum class ValueType {
     VOID = 0,
     INT16, INT32, INT64,
     UINT16, UINT32, UINT64,
-    FLOAT, DOUBLE,
-    STRUCT,
+    FLOAT, DOUBLE, BOOL,
     POINTER,
 };
 
@@ -319,6 +318,7 @@ struct CapyDomain {
     std::unordered_map<uint32_t, std::unique_ptr<CapyLibrary>> Libraries;
     std::vector<std::string> CoreLibraries;
 
+    std::unordered_map<uint32_t, uint64_t> StoredSizes;
     std::unordered_map<uint32_t, std::unique_ptr<CapyObject>> LiveObjects;
 
     CapyDomain()

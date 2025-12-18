@@ -35,16 +35,26 @@ public:
 		return capy_function_call_from_method(method, localCopy);
 	}
 
-    void SetFieldData(const std::string& fieldName, void* data)
+    void SetFieldData(const std::string& fieldName, void* data, uint64_t customSize = 0, uint64_t customOffset = 0)
     {
         auto& fields = m_CapyClass->VTable->Fields;
-        uint32_t fieldID = generate_hash(fieldName);
+        
+        std::string fullName;
+        if (!m_CapyClass->NameSpace.empty() && !m_CapyClass->ClassName.empty())
+            fullName = m_CapyClass->NameSpace + "::" + m_CapyClass->ClassName;
+        else if (!m_CapyClass->NameSpace.empty())
+            fullName = m_CapyClass->NameSpace;
+        else if (!m_CapyClass->ClassName.empty())
+            fullName = m_CapyClass->ClassName;
+        fullName += "::" + fieldName;
+
+        uint32_t fieldID = generate_hash(fullName);
         auto it = fields.find(fieldID);
         if (it == fields.end()) return;
 
         CapyField* cf = it->second.get();
 
-        capy_field_data_set(m_ClassObject, cf, data);
+        capy_field_data_set(m_ClassObject, cf, data, customSize, customOffset);
     }
 
 private:
@@ -102,7 +112,7 @@ int main(int argc, char** argv)
     CapyWrapper TestClassWrapper(img, "DLL", "Test");
 
     int data = 10;
-    TestClassWrapper.SetFieldData("m_TestInteger", &data);
+    TestClassWrapper.SetFieldData("m_Base", &data, sizeof(int));
 
     CapyMethod* PrintBaseIntMethod = TestClassWrapper.GetMethod("PrintBaseInt");
 

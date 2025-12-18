@@ -444,6 +444,90 @@ std::string capy_dump_domain()
     return str;
 }
 
+void capy_register_class_or_struct_size(uint32_t hash, uint64_t size)
+{
+    s_Storage.Active.Runtime->StoredSizes[hash] = size;
+}
+
+uint64_t capy_get_class_or_struct_size(const std::string& nameSpace, const std::string& className)
+{
+    std::string fullName;
+    if (!nameSpace.empty() && !className.empty())
+        fullName += nameSpace + "::" + className;
+    else if (!nameSpace.empty())
+        fullName = nameSpace;
+    else if (!className.empty())
+        fullName = className;
+
+    uint32_t classHash = generate_hash(fullName);
+
+    if (!s_Storage.Active.Runtime->StoredSizes.contains(classHash))
+        return 0;
+
+    return s_Storage.Active.Runtime->StoredSizes[generate_hash(fullName)];
+}
+
+std::vector<CapyField*> capy_sort_and_set_fields_offset_from_class(CapyClass* klass)
+{
+    std::vector<CapyField*> allFields;
+    for (auto& [_, field] : klass->VTable->Fields)
+    {
+        allFields.push_back(field.get());
+    }
+
+    std::vector<CapyField*> sortedFields;
+    size_t actualOffset = 0;
+    while(!allFields.empty())
+    {
+        
+        int lowestOffsetIndex = 0;
+        int lowestOffsetAmount = 0;
+
+        bool firstRun = true;
+        
+        for (size_t i = 0; i < allFields.size(); ++i)
+        {
+            // If it's the first run, we just set the values
+            // so we have a starting amount
+            if (firstRun)
+            {
+                lowestOffsetAmount = allFields[i]->Offset;
+                lowestOffsetIndex = i;
+                firstRun = false;
+                continue;
+            }
+
+
+            if (allFields[i]->Offset < lowestOffsetAmount)
+            {
+                lowestOffsetAmount = allFields[i]->Offset;
+                lowestOffsetIndex = i;
+            }
+        }
+
+
+        allFields[lowestOffsetIndex]->Offset = actualOffset;
+
+        if (allFields[lowestOffsetIndex]->Size == 0)
+        {
+            auto* obtainedClass = capy_class_from_name(allFields[lowestOffsetIndex]->SymbolMetaData.Namespace, allFields[lowestOffsetIndex]->SymbolMetaData.ReturnType);
+            if (obtainedClass)
+            {
+                actualOffset += obtainedClass->ClassSize;
+            }
+        }
+        else
+        {
+            actualOffset += allFields[lowestOffsetIndex]->Size;
+        }
+
+        sortedFields.push_back(allFields[lowestOffsetIndex]);
+        allFields.erase(allFields.begin() + lowestOffsetIndex);
+    }
+
+    return sortedFields;
+}
+
 
 void capy_reload_libraries_into_domain()
 {
@@ -466,37 +550,44 @@ void capy_reload_libraries_into_domain()
         }
     }
 
+
+
     for (auto& [_, lib] : cd->Libraries)
     {
-        for (auto& [_, klass] : lib->Image->Structures)
+        for (auto& [klassHash, klass] : lib->Image->Structures)
         {
             uint64_t totalSize = 0;
             for (auto& [_, field] : klass->VTable->Fields)
                 totalSize += field->Size;
 
             klass->ClassSize = totalSize;
+            capy_register_class_or_struct_size(klassHash, totalSize);
         }
     }
 
-    // PASS 2 — compute CLASS declared sizes (all libraries)
+
+
     for (auto& [_, lib] : cd->Libraries)
     {
-        for (auto& [_, klass] : lib->Image->Classes)
+        for (auto& [klassHash, klass] : lib->Image->Classes)
         {
+            uint64_t totalSize = 0;
             for (auto& [_, field] : klass->VTable->Fields)
             {
                 if (field->Size == 0)
                 {
-                    auto* obtainedClass =
-                        capy_class_from_name(field->SymbolMetaData.Namespace,
-                                field->SymbolMetaData.ReturnType);
-
-                    if (obtainedClass && obtainedClass->IsStruct)
-                        klass->ClassSize += obtainedClass->ClassSize;
+                    uint64_t fieldSize =  capy_get_class_or_struct_size(field->SymbolMetaData.Namespace, field->SymbolMetaData.ReturnType);
+                    totalSize += fieldSize;
+                    field->Size = fieldSize;
+                }
+                else
+                {
+                    totalSize += field->Size;
                 }
 
-                klass->ClassSize += field->Size;
             }
+            klass->ClassSize = totalSize;
+            capy_register_class_or_struct_size(klassHash, totalSize);
         }
     }
 
@@ -508,11 +599,8 @@ void capy_reload_libraries_into_domain()
 
             for (auto& baseClass : s_Storage.Config.ClassMap[klassHash])
             {
-                auto* obtainedClass =
-                    capy_class_from_name(baseClass.NameSpace, baseClass.ClassName);
-
-                if (obtainedClass)
-                    totalSize += obtainedClass->ClassSize;
+                uint64_t fieldSize =  capy_get_class_or_struct_size(baseClass.NameSpace, baseClass.ClassName);
+                totalSize += fieldSize;
             }
 
             klass->BaseClassSize = totalSize;
@@ -533,6 +621,30 @@ void capy_reload_libraries_into_domain()
                 }
             }
 
+        }
+    }
+
+    for (auto& [_, lib] : cd->Libraries)
+    {
+        for (auto& [_, klass] : lib->Image->Classes)
+        {
+            std::vector<CapyField*> sortedFields = capy_sort_and_set_fields_offset_from_class(klass.get());
+
+            for (auto* field : sortedFields)
+            {
+                std::string fullName;
+                if (!field->SymbolMetaData.Namespace.empty() && !field->SymbolMetaData.ClassName.empty())
+                    fullName = field->SymbolMetaData.Namespace + "::" + field->SymbolMetaData.ClassName;
+                else if (!field->SymbolMetaData.Namespace.empty())
+                    fullName = field->SymbolMetaData.Namespace;
+                if (field->SymbolMetaData.ClassName.empty())
+                    fullName = field->SymbolMetaData.ClassName;
+                fullName += "::" + field->SymbolMetaData.Name;
+                std::cout << fullName << "(" << field->Offset << ")\n";
+
+                uint32_t fieldHash = generate_hash(fullName);
+                klass->VTable->Fields[fieldHash] = std::make_unique<CapyField>(*field);
+            }
         }
     }
 
@@ -682,7 +794,15 @@ CapyLibrary* capy_domain_library_open(const std::string& binName)
             field->Size = type_size(field->FieldType);
             field->ClassMember = sym.IsVariable && sym.IsClassInstance;
             field->SymbolMetaData = sym;
-            uint32_t fieldHash = generate_hash(sym.Name);
+            std::string fullName;
+            if (!field->SymbolMetaData.Namespace.empty() && !field->SymbolMetaData.ClassName.empty())
+                fullName = field->SymbolMetaData.Namespace + "::" + field->SymbolMetaData.ClassName;
+            else if (!field->SymbolMetaData.Namespace.empty())
+                fullName = field->SymbolMetaData.Namespace;
+            if (field->SymbolMetaData.ClassName.empty())
+                fullName = field->SymbolMetaData.ClassName;
+            fullName += "::" + field->SymbolMetaData.Name;
+            uint32_t fieldHash = generate_hash(fullName);
             klass->VTable->Fields[fieldHash] = std::move(field);
         }
         else
@@ -813,8 +933,6 @@ CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath)
 
         s_Storage.Config.CoreDataStructures[classHash] = { sym.Namespace, sym.ClassName };
 
-        std::cout << "Core Data Structure: " << sym.Namespace << "::" << sym.ClassName << " ADDED\n";
-
         bool found = false;
 
         if (sym.IsStruct)
@@ -862,7 +980,15 @@ CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath)
             field->Size = type_size(field->FieldType);
             field->ClassMember = sym.IsVariable && sym.IsClassInstance;
             field->SymbolMetaData = sym;
-            uint32_t fieldHash = generate_hash(sym.Name);
+            std::string fullName;
+            if (!field->SymbolMetaData.Namespace.empty() && !field->SymbolMetaData.ClassName.empty())
+                fullName = field->SymbolMetaData.Namespace + "::" + field->SymbolMetaData.ClassName;
+            else if (!field->SymbolMetaData.Namespace.empty())
+                fullName = field->SymbolMetaData.Namespace;
+            if (field->SymbolMetaData.ClassName.empty())
+                fullName = field->SymbolMetaData.ClassName;
+            fullName += "::" + field->SymbolMetaData.Name;
+            uint32_t fieldHash = generate_hash(fullName);
             klass->VTable->Fields[fieldHash] = std::move(field);
         }
         else
@@ -970,8 +1096,6 @@ CapyClass* capy_class_from_name(const std::string& nameSpace, const std::string&
     else if (!className.empty())
         fullName += className;
 
-    std::cout << fullName << "\n";
-
     uint32_t classHash = generate_hash(fullName);
     for (auto& [_, libraries] : s_Storage.Active.Runtime->Libraries)
     {
@@ -1072,7 +1196,7 @@ void capy_field_data_set(CapyObject* instance, CapyClass* cc, const std::string&
     }
 }
 
-void capy_field_data_set(CapyObject* instance, CapyField* cf, void* value)
+void capy_field_data_set(CapyObject* instance, CapyField* cf, void* value, uint64_t customSize, uint64_t customOffset)
 {
     auto* cd = s_Storage.Active.Runtime.get();
 
@@ -1090,12 +1214,20 @@ void capy_field_data_set(CapyObject* instance, CapyField* cf, void* value)
     }
 
     // If you have owner class size in metadata, validate bounds:
-    size_t size = type_size(cf->FieldType);
+    size_t size = customSize > 0 ? customSize : type_size(cf->FieldType);
+
+    if (size == 0)
+    {
+        size = capy_get_class_or_struct_size(cf->SymbolMetaData.Namespace, cf->SymbolMetaData.ReturnType);
+    }
+
+    uint64_t offset = cf->Offset + customOffset;
+
 
 
     if (instance && instance->Memory)
     {
-        void* ptr = static_cast<char*>(instance->Memory) + cf->Offset;
+        void* ptr = static_cast<char*>(instance->Memory) + offset;
         memcpy(ptr, value, size); // default memcpy
     }
     else
@@ -1103,6 +1235,7 @@ void capy_field_data_set(CapyObject* instance, CapyField* cf, void* value)
         memcpy(cf->DefaultData.raw_ptr(), value, size);
     }
 }
+
 
 void* capy_function_call_from_method(CapyMethod* method, const std::vector<RuntimeValue>& values)
 {
