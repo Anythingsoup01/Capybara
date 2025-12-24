@@ -3,6 +3,8 @@
 
 namespace DLL
 {
+    void BigChungus::Test() {}
+
     Base::Base()
     {
         printf("Base Class!\n");

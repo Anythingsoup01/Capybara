@@ -8,6 +8,8 @@ namespace DLL
     struct BigChungus
     {
         uint64_t Doc;
+
+        void Test();
     };
 
     class Base
@@ -19,5 +21,6 @@ namespace DLL
 
 
         uint32_t ID;
+        BigChungus Chunger;
     };
 }
