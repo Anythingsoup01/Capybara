@@ -21,6 +21,5 @@ namespace DLL
 
 
         uint32_t ID;
-        BigChungus Chunger;
     };
 }

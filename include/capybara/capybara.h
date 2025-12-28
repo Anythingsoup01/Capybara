@@ -102,15 +102,9 @@ CapyField* capy_field_from_class(CapyClass* cc, const std::string& fieldName);
 // as long as you know the name of the field
 void capy_field_data_get(CapyObject* instance, CapyClass* cc, const std::string& fieldName, void* value);
 
-// This function is used to get the data at a given field
-void capy_field_data_get(CapyObject* instance, CapyField* cf, void* value);
-
 // This function is used to set the data at a given field in a class
 // as long as you know the name of the field
 void capy_field_data_set(CapyObject* instance, CapyClass* cc, const std::string& fieldName, void* value);
-
-// This function is used to set the data at a give field in a class
-void capy_field_data_set(CapyObject* instance, CapyField* cf, void* value, uint64_t customSize = 0, uint64_t customOffset = 0);
 
 // This function is used to call a given method with given values
 void* capy_function_call_from_method(CapyMethod* cm, const std::vector<RuntimeValue>& values);

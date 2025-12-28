@@ -35,31 +35,34 @@ public:
 		return capy_function_call_from_method(method, localCopy);
 	}
 
-    void SetFieldData(const std::string& fieldName, void* data, uint64_t customSize = 0, uint64_t customOffset = 0)
+    template <typename T>
+    void SetFieldData(const std::string& fieldName, T data)
     {
-        auto& fields = m_CapyClass->VTable->Fields;
-        
-        std::string fullName;
-        if (!m_CapyClass->NameSpace.empty() && !m_CapyClass->ClassName.empty())
-            fullName = m_CapyClass->NameSpace + "::" + m_CapyClass->ClassName;
-        else if (!m_CapyClass->NameSpace.empty())
-            fullName = m_CapyClass->NameSpace;
-        else if (!m_CapyClass->ClassName.empty())
-            fullName = m_CapyClass->ClassName;
-        fullName += "::" + fieldName;
+        capy_field_data_set(m_ClassObject, m_CapyClass, fieldName, &data);
+    }
 
-        uint32_t fieldID = generate_hash(fullName);
-        auto it = fields.find(fieldID);
-        if (it == fields.end()) return;
+    template<typename T>
+    T GetFieldData(const std::string& fieldName)
+    {
+        if (GetFieldDataInternal(fieldName, &s_FieldBufferData))
+            return *(T*)s_FieldBufferData;
 
-        CapyField* cf = it->second.get();
+        return T();
+    }
 
-        capy_field_data_set(m_ClassObject, cf, data, customSize, customOffset);
+
+private:
+    bool GetFieldDataInternal(const std::string& name, void* buffer)
+    {
+        capy_field_data_get(m_ClassObject, m_CapyClass, name, buffer);
+        return true;
     }
 
 private:
     CapyObject* m_ClassObject;
     CapyClass* m_CapyClass;
+
+    static inline char s_FieldBufferData[8];
 };
 
 #define ADD_INTERNAL_CALL(Name) capy_add_internal_call(#Name, (void*)&Name)
@@ -69,23 +72,21 @@ int Internal_Add(int a, int b)
     return a + b;
 }
 
-std::filesystem::path CustomFileEventCallback(FileEventType type, const std::filesystem::path& path)
+void CustomFileEventCallback(FileEventType type, const std::filesystem::path& path)
 {
 
     switch (type)
     {
         case FileEventType::Create:
-            std::cout << "CREATED FILE: " << path.filename().string() << "\n";
+            //std::cout << "CREATED FILE: " << path.filename().string() << "\n";
             break;
         case FileEventType::Modify:
-            std::cout << "MODIFIED FILE: " << path.filename().string() << "\n";
+            //std::cout << "MODIFIED FILE: " << path.filename().string() << "\n";
             break;
         case FileEventType::Delete:
-            std::cout << "DELETED FILE: " << path.filename().string() << "\n";
+            //std::cout << "DELETED FILE: " << path.filename().string() << "\n";
             break;
     }
-
-    return path;
 }
 
 
@@ -112,12 +113,18 @@ int main(int argc, char** argv)
     CapyWrapper TestClassWrapper(img, "DLL", "Test");
 
     int data = 10;
-    TestClassWrapper.SetFieldData("m_Base", &data, sizeof(int));
+    TestClassWrapper.SetFieldData("m_Base.ID", data);
 
     CapyMethod* PrintBaseIntMethod = TestClassWrapper.GetMethod("PrintBaseInt");
 
     if (!TestClassWrapper.InvokeMethod(PrintBaseIntMethod))
         raise(SIGTRAP);
+
+
+    int retrievedData = TestClassWrapper.GetFieldData<int>("m_Base.ID");
+
+    std::cout << "Retrieved Data: " << retrievedData << "\n";
+
     while (true) 
     {
         if (capy_jit_poll())

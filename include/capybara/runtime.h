@@ -8,20 +8,25 @@
 
 constexpr size_t INVALID_OFFSET = static_cast<size_t>(-1);
 
-struct _SymbolMetaData {
+struct _SymbolMetaData
+{
     std::string Namespace;
     std::string ClassName;
     std::string Name;
     std::string Signature;
     std::string ReturnType;
+
     std::vector<std::string> ParameterTypes;
+
     bool IsVariable = false;
     bool IsClassInstance = false;
     bool IsStruct = false;
     size_t Offset = INVALID_OFFSET;
 };
 
-enum class ValueType {
+
+enum class ValueType
+{
     VOID = 0,
     INT16, INT32, INT64,
     UINT16, UINT32, UINT64,
@@ -46,7 +51,7 @@ static constexpr ValueType get_value_type()
 
 // This function will let you convert a string into the relative
 // value type, this returns ValueType::VOID if there is no match
-ValueType string_to_value_type(const std::string &value);
+ValueType string_to_value_type(const std::string& value);
 
 // This function will return the corresponding size of the ValueType
 size_t type_size(ValueType type);
@@ -93,22 +98,25 @@ private:
     char m_Data[128];
 };
 
+struct SubField
+{
+    size_t Size;
+    size_t Offset;
+};
+
 struct CapyField
 {
-    void* SymHandle;
-    ValueType FieldType;
-    uint64_t Offset;
-    uint64_t Size;
-    bool ClassMember;
-    bool IsStruct;
+    void* SymHandle = nullptr;
+    ValueType FieldType = ValueType::VOID;
+    uint64_t Offset = 0;
+    uint64_t Size = 0;
+    bool ClassMember = false;
+    
+    std::unordered_map<uint32_t, SubField> SubFields;
 
-    // We use a string for custom types
-    // that are either non-standard or
-    // user made
-    std::string FieldTypeString;
+    std::string FieldTypeString = nullptr;
 
     RuntimeValue DefaultData;
-
     _SymbolMetaData SymbolMetaData;
 
     CapyField()
@@ -136,11 +144,11 @@ struct CapyField
 
 struct CapyMethod
 {
-    void* SymHandle;
-    ValueType ReturnType;
+    void* SymHandle = nullptr;
+    ValueType ReturnType = ValueType::VOID;
     std::vector<ValueType> Parameters;
     std::vector<std::string> ParameterTypeStrings;
-    bool ClassMember;
+    bool ClassMember = false;
 
     _SymbolMetaData SymbolMetaData;
 
@@ -193,6 +201,8 @@ struct CapyClass
     size_t DeclaredSize = 0;
     size_t ClassSize = 0;
     size_t Allignment = 16;
+
+    bool IsStruct = false;
 
     CapyClass()
         : NameSpace(""),
@@ -331,7 +341,6 @@ struct BaseClasses
     std::string NameSpace;
     std::string ClassName;
 };
-
 
 // TODO: Delete this if not needed
 template<typename... Ts>

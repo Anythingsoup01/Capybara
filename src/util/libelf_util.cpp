@@ -253,7 +253,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         // Intentionally leaving the class name empty
         // If we get an instance of Class* this,
         // then we will convert it to the ClassName.
-        _SymbolMetaData sym;
+        _SymbolMetaData sym = _SymbolMetaData();
         std::string name = get_short_name(d);
         if (strs_n_equal(name, cfg.IgnoredNames)) return;
 
