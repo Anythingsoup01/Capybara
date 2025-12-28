@@ -81,7 +81,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
     if (is_scope && !name.empty())
         scope_stack.push_back(name);
 
-    if (is_classname)
+    if (is_classname || is_structure)
     {
         std::vector<BaseClasses> classes;
         for (auto& child : d)
@@ -105,52 +105,17 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
                 }
 
                 classes.push_back({ qualified_name, base_name});
-                storage.Config.KnownClassNames.push_back(base_name);
+                if (is_classname)
+                    storage.Config.KnownClassNames.push_back(base_name);
+                else
+                    storage.Config.KnownStructNames.push_back(base_name);
             }
         }
 
-        storage.Config.KnownClassNames.push_back(name);
-        std::vector<std::string> full_scope(scope_stack);
-
-        std::string qualified_name;
-        for (size_t i = 0; i < full_scope.size(); ++i) {
-            if (i > 0) qualified_name += "::";
-            qualified_name += full_scope[i];
-        }
-
-        uint32_t nameHash = generate_hash(qualified_name);
-        storage.Config.ClassMap[nameHash] = classes;
-    }
-
-    if (is_structure)
-    {
-        std::vector<BaseClasses> classes;
-        for (auto& child : d)
-        {
-            if (child.tag == dwarf::DW_TAG::inheritance && child.has(dwarf::DW_AT::type))
-            {
-                dwarf::die base_die = child[dwarf::DW_AT::type].as_reference();
-                std::string base_name = get_short_name(base_die);
-                
-                size_t vectorSize = scope_stack.size();
-
-                std::vector<std::string> namespaceScope(scope_stack);
-
-                namespaceScope.pop_back();
-
-
-                std::string qualified_name;
-                for (size_t i = 0; i < namespaceScope.size(); ++i) {
-                    if (i > 0) qualified_name += "::";
-                    qualified_name += namespaceScope[i];
-                }
-
-                classes.push_back({ qualified_name, base_name});
-                storage.Config.KnownStructNames.push_back(base_name);
-            }
-        }
-
-        storage.Config.KnownStructNames.push_back(name);
+        if (is_classname)
+            storage.Config.KnownClassNames.push_back(name);
+        else
+            storage.Config.KnownStructNames.push_back(name);
 
         std::vector<std::string> full_scope(scope_stack);
 
@@ -161,10 +126,12 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         }
 
         uint32_t nameHash = generate_hash(qualified_name);
-        storage.Config.StructMap[nameHash] = classes;
+        if (is_classname)
+            storage.Config.ClassMap[nameHash] = classes;
+        else
+            storage.Config.StructMap[nameHash] = classes;
     }
 
-    
 
     // ---- Process functions ----
     if (d.tag == dwarf::DW_TAG::subprogram) {
@@ -201,16 +168,21 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
             size_t pointer = paramType.rfind("*");
             if (pointer != std::string::npos)
             {
-                std::string lastNamespace;
                 std::string typeName = paramType.substr(0, pointer);
-                size_t lastNamespacePos = qualified_name.rfind("::");
 
-                if (lastNamespacePos != std::string::npos)
-                    lastNamespace = qualified_name.substr(lastNamespacePos + 2);
-                else
-                    lastNamespace = qualified_name;
+                std::vector<std::string> fullScope(scope_stack);
 
-                if (strncmp(lastNamespace.c_str(), typeName.c_str(), typeName.size()) == 0)
+                size_t scopeSize = fullScope.size();
+
+                if (scopeSize < 2)
+                {
+                    sym.ParameterTypes.push_back(paramType);
+                    continue;
+                }
+
+                std::string className = fullScope[scopeSize - 2];
+
+                if (className == typeName)
                 {
                     for (auto& name : cfg.KnownClassNames)
                     {
@@ -220,14 +192,12 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
                             continue;
                         }
                     }
-                    cfg.KnownClassNames.push_back(typeName);
                     sym.IsClassInstance = true;
                 }
                 else
                 {
                     sym.ParameterTypes.push_back(paramType);
                 }
-
             }
             else
             {

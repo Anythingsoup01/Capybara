@@ -69,15 +69,9 @@ std::string capy_dump_domain();
 // and a new domain should be created before trying to load libraries
 void capy_reload_libraries_into_domain();
 
-// This function is used to open non-core libraries
-// if you want to add a core library use
-// capy_domain_core_library_open instead
-CapyLibrary* capy_domain_library_open(const std::string& binName);
-
-// This function is used to open core libraries, core libraries
-// get stored in the storage and get linked to all libraries when
-// recompiled
-CapyLibrary* capy_domain_core_library_open(const std::filesystem::path& binPath);
+// This function is used to open libraries, for a library to be marked as core,
+// and compiled into the other libraries automatically, mark isCore as true
+CapyLibrary* capy_domain_library_open(const std::string& binName, bool isCore);
 
 // This function lets you retrieve a vector of library names that were marked as core,
 // this is useful for making a runtime that needs base classes, I.e. MonoBehavior (for C#),

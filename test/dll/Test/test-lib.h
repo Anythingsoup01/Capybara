@@ -5,7 +5,7 @@
 
 namespace DLL
 {
-    class Test : public Base
+    class Test : public Base // 12 bytes (0)
     {
     public:
         void PrintBaseInt();
@@ -17,16 +17,17 @@ namespace DLL
 
         void UpdateCheck(int16_t test);
 
-    private:
-        Base m_Base;
-        uint64_t ID;
+        private:
+        Base m_Base; // 12 bytes (12)
+        uint64_t ID; // 8 bytes (24)
 
-        float m_FloatOne;
-        float m_FloatTwo;
-        float m_FloatThree;
+        float m_FloatOne; // 4 bytes (32)
+        float m_FloatTwo; // 4 bytes (36)
+        float m_FloatThree; // 4 bytes (40)
 
-        bool m_BoolOne;
-        bool m_BoolTwo;
-        bool m_BoolThree;
+        bool m_BoolOne; // 1 bytes (44)
+        bool m_BoolTwo; // 1 bytes (45)
+        bool m_BoolThree; // 1 bytes (46)
+                          // total size 47
     };
 }

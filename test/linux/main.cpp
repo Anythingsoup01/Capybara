@@ -99,11 +99,11 @@ int main(int argc, char** argv)
 
     capy_jit_set_core_bin_include_path("test/dll/Base");
 
-    capy_domain_core_library_open("build/test/dll/Base/libbase-class.so");
+    capy_domain_library_open("build/test/dll/Base/libbase-class.so", true);
 
     capy_reload_libraries_into_domain();
 
-    CapyLibrary* lib = capy_domain_library_open("test-lib.so");
+    CapyLibrary* lib = capy_domain_library_open("test-lib.so", false);
 
     CapyImage* img = capy_library_get_image(lib);
 

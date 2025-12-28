@@ -194,8 +194,6 @@ struct CapyClass
     size_t ClassSize = 0;
     size_t Allignment = 16;
 
-    bool IsStruct = false;
-
     CapyClass()
         : NameSpace(""),
         ClassName(""),
@@ -385,4 +383,4 @@ struct RuntimeStorage
     CapyConfigStorage Config;
 };
 
-extern RuntimeStorage s_Storage;
+extern RuntimeStorage g_Storage;
