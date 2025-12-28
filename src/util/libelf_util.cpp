@@ -83,7 +83,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
 
     if (is_classname || is_structure)
     {
-        std::vector<BaseClasses> classes;
+        std::vector<BaseClass> classes;
         for (auto& child : d)
         {
             if (child.tag == dwarf::DW_TAG::inheritance && child.has(dwarf::DW_AT::type))

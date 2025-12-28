@@ -7,29 +7,10 @@
 
 namespace DLL
 {
-
-    int NamespacedVar = 10;
-
-    class InCPPFile
-    {
-    public:
-        void Test() {}
-    };
-
     void Test::PrintBaseInt()
     {
-        printf("Got: %u\n", m_Base);
+        printf("Got: %u\n", Base::ID);
     }
-
-    void Test::Print(const char* msg)
-    {
-    }
-
-    void Test::PrintAgain()
-    {
-    }
-
-    void Test::UpdateCheck(int16_t test) {}
 
     void Test::CustomAdd(int a, int b)
     {

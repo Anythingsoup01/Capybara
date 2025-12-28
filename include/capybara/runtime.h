@@ -104,6 +104,12 @@ struct SubField
     size_t Offset;
 };
 
+struct BaseClass
+{
+    std::string NameSpace;
+    std::string ClassName;
+};
+
 struct CapyField
 {
     void* SymHandle = nullptr;
@@ -202,7 +208,8 @@ struct CapyClass
     size_t ClassSize = 0;
     size_t Allignment = 16;
 
-    bool IsStruct = false;
+    std::unordered_map<uint32_t, SubField> SubFields;
+    std::unordered_map<uint32_t, BaseClass> BaseClasses;
 
     CapyClass()
         : NameSpace(""),
@@ -336,11 +343,6 @@ struct CapyDomain {
     {}
 };
 
-struct BaseClasses
-{
-    std::string NameSpace;
-    std::string ClassName;
-};
 
 // TODO: Delete this if not needed
 template<typename... Ts>
@@ -375,9 +377,9 @@ struct CapyConfigStorage
 {
     bool IgnoreEmptyNamespaces = false;
 
-    std::unordered_map<uint32_t, std::vector<BaseClasses>> ClassMap;
-    std::unordered_map<uint32_t, std::vector<BaseClasses>> StructMap;
-    std::unordered_map<uint32_t, BaseClasses> CoreDataStructures;
+    std::unordered_map<uint32_t, std::vector<BaseClass>> ClassMap;
+    std::unordered_map<uint32_t, std::vector<BaseClass>> StructMap;
+    std::unordered_map<uint32_t, BaseClass> CoreDataStructures;
     std::vector<std::string> KnownClassNames;
     std::vector<std::string> KnownStructNames;
     std::vector<std::string> IgnoredNamespaces;

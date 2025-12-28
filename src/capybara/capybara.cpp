@@ -595,13 +595,20 @@ void capy_reload_libraries_into_domain()
                 CapyClass* baseClass = capy_class_from_name(baseMeta.NameSpace, baseMeta.ClassName);
                 if (!baseClass) continue;
 
+                std::string fullName;
+                if (!baseMeta.NameSpace.empty())
+                    fullName += baseMeta.NameSpace + "::";
+                if (!baseMeta.ClassName.empty())
+                    fullName += baseMeta.ClassName;
+
+                if (!klass->BaseClasses.contains(generate_hash(fullName)))
+                    klass->BaseClasses[generate_hash(fullName)] = baseMeta;
+
                 for (auto& [fieldHash, baseField] : baseClass->VTable->Fields)
                 {
-                    // Avoid overwriting derived fields if same name exists
-                    if (klass->VTable->Fields.contains(fieldHash)) continue;
-
                     // Copy base field into derived
                     auto copiedField = std::make_unique<CapyField>(*baseField);
+                    klass->SubFields[fieldHash] = { copiedField->Size, copiedField->Offset };
                     klass->VTable->Fields[fieldHash] = std::move(copiedField);
                 }
             }
@@ -968,12 +975,12 @@ void capy_field_data_get(CapyObject* instance, CapyClass* cc, const std::string&
     fullName += adjustedFieldName;
 
     CapyField* cf = capy_field_from_class(cc, fullName);
-    if (!cf) return;
+    if (!cf && subFieldName.empty()) return;
 
     size_t sizeOverride = 0;
     size_t offsetOverride = 0;
 
-    if (!subFieldName.empty())
+    if (!subFieldName.empty() && cf)
     {
         std::string fullName;
         if (!cf->SymbolMetaData.Namespace.empty())
@@ -983,15 +990,39 @@ void capy_field_data_get(CapyObject* instance, CapyClass* cc, const std::string&
 
         fullName += subFieldName;
         uint32_t fieldHash = generate_hash(fullName);
-        
+
         sizeOverride = cf->SubFields[fieldHash].Size;
         offsetOverride = cf->SubFields[fieldHash].Offset;
+
     }
+    else
+    {
+        for (auto& [_, baseClass] : cc->BaseClasses)
+        {
+            std::string fullName;
+            if (!baseClass.NameSpace.empty())
+                fullName += baseClass.NameSpace + "::";
+            if (!baseClass.ClassName.empty())
+                fullName += baseClass.ClassName + "::";
+            fullName += subFieldName;
+
+            uint32_t fieldHash = generate_hash(fullName);
+
+            if (!cc->SubFields.contains(fieldHash))
+                continue;
+
+            sizeOverride = cc->SubFields[fieldHash].Size;
+            offsetOverride = cc->SubFields[fieldHash].Offset;
+            break;
+        }
+
+    }
+
 
     if (instance && instance->Memory)
     {
         size_t size = sizeOverride < 1 ? type_size(cf->FieldType) : sizeOverride;
-        void* ptr = static_cast<char*>(instance->Memory) + cf->Offset + offsetOverride;
+        void* ptr = cf ? static_cast<char*>(instance->Memory) + cf->Offset + offsetOverride : static_cast<char*>(instance->Memory) + offsetOverride;
         memcpy(value, ptr, size);
     }
     else
@@ -1030,12 +1061,12 @@ void capy_field_data_set(CapyObject* instance, CapyClass* cc, const std::string&
     fullName += adjustedFieldName;
 
     CapyField* cf = capy_field_from_class(cc, fullName);
-    if (!cf) return;
+    if (!cf && subFieldName.empty()) return;
 
     size_t sizeOverride = 0;
     size_t offsetOverride = 0;
 
-    if (!subFieldName.empty())
+    if (!subFieldName.empty() && cf)
     {
         std::string fullName;
         if (!cf->SymbolMetaData.Namespace.empty())
@@ -1045,16 +1076,38 @@ void capy_field_data_set(CapyObject* instance, CapyClass* cc, const std::string&
 
         fullName += subFieldName;
         uint32_t fieldHash = generate_hash(fullName);
-        
+
         sizeOverride = cf->SubFields[fieldHash].Size;
         offsetOverride = cf->SubFields[fieldHash].Offset;
+
+    }
+    else
+    {
+        for (auto& [_, baseClass] : cc->BaseClasses)
+        {
+            std::string fullName;
+            if (!baseClass.NameSpace.empty())
+                fullName += baseClass.NameSpace + "::";
+            if (!baseClass.ClassName.empty())
+                fullName += baseClass.ClassName + "::";
+            fullName += subFieldName;
+
+            uint32_t fieldHash = generate_hash(fullName);
+
+            if (!cc->SubFields.contains(fieldHash))
+                continue;
+
+            sizeOverride = cc->SubFields[fieldHash].Size;
+            offsetOverride = cc->SubFields[fieldHash].Offset;
+            break;
+        }
+
     }
 
     if (instance && instance->Memory)
     {
         size_t size = sizeOverride < 1 ? type_size(cf->FieldType) : sizeOverride;
-
-        void* ptr = static_cast<char*>(instance->Memory) + cf->Offset + offsetOverride;
+        void* ptr = cf ? static_cast<char*>(instance->Memory) + cf->Offset + offsetOverride : static_cast<char*>(instance->Memory) + offsetOverride;
         memcpy(ptr, value, size);
     }
     else

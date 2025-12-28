@@ -10,14 +10,10 @@ namespace DLL
     public:
         void PrintBaseInt();
 
-        void Print(const char* msg);
-        void PrintAgain();
-
         void CustomAdd(int a, int b);
 
-        void UpdateCheck(int16_t test);
 
-        private:
+    private:
         Base m_Base; // 12 bytes (12)
         uint64_t ID; // 8 bytes (24)
 
