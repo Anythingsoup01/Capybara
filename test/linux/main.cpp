@@ -106,6 +106,7 @@ int main(int argc, char** argv)
 
     CapyLibrary* lib = capy_domain_library_open("test-lib.so", false);
 
+#if 1
     CapyImage* img = capy_library_get_image(lib);
 
     ADD_INTERNAL_CALL(Internal_Add);
@@ -125,6 +126,7 @@ int main(int argc, char** argv)
 
     std::cout << "Retrieved Data: " << retrievedData << "\n";
 
+
     while (true) 
     {
         if (capy_jit_poll())
@@ -132,6 +134,7 @@ int main(int argc, char** argv)
             std::cout << capy_dump_domain();
         }
     }
+#endif
 
     capy_jit_shutdown();
 

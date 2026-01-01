@@ -66,3 +66,66 @@ size_t type_size(ValueType type)
 
     return 0;
 }
+
+CapyString capy_string_literal(const char* s)
+{
+    return {
+        .Data = s,
+        .Size = (uint32_t)strlen(s),
+        .Storage = StringStorage::Literal
+    };
+}
+
+CapyString capy_string_heap(const char* s)
+{
+    size_t len = strlen(s) + 1;
+    char* buf = new char[len];
+    memcpy(buf, s, len);
+    return {
+        .Data = buf,
+        .Size = (uint32_t)(len - 1),
+        .Storage = StringStorage::Heap
+    };
+}
+
+CapyString capy_string_arena(CapyStringArena& arena, const char* s)
+{
+    if (!s) return { nullptr, 0, StringStorage::Arena };
+
+    size_t len = strlen(s);
+    // Allocate space for string + null terminator
+    char* buf = arena.alloc(len + 1);
+    if (!buf) return { nullptr, 0, StringStorage::Arena };
+
+    memcpy(buf, s, len + 1); // Copy including null terminator
+
+    return { buf, static_cast<uint32_t>(len), StringStorage::Arena };
+}
+
+static CapyString capy_string_intern_internal(const char* s)
+{
+    auto* domain = g_Storage.Active.Runtime.get();
+    auto& arena = domain->Arena;
+    auto& table = domain->Table;
+
+    return table.intern(s, arena);
+}
+
+CapyString capy_string_intern(const CapyString& capyString)
+{
+    return capy_string_intern_internal(capyString.c_str());
+}
+
+CapyString capy_string_intern(const char* str)
+{
+    return capy_string_intern_internal(str);
+}
+
+void capy_string_release(CapyString& s)
+{
+    if (s.Storage == StringStorage::Heap)
+        delete [] s.Data;
+
+    s = {};
+}
+
