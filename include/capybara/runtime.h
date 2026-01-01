@@ -8,18 +8,19 @@
 
 constexpr size_t INVALID_OFFSET = static_cast<size_t>(-1);
 
-// This is a simple hashing algorithm to let us use uint32_t
+// This is a simple hashing algorithm to let us use uint64_t
 // comparisons instead of string comparisons
-constexpr uint32_t generate_hash(const std::string_view& str)
+constexpr uint64_t generate_hash(const std::string_view& str)
 {
-    uint32_t hash = 2166136261u;
-    for (char c : str)
+    uint64_t hash = 14695981039346656037ull;
+    for (unsigned char c : str)
     {
-        hash ^= static_cast<uint8_t>(c);
-        hash *= 16777619u;
+        hash ^= c;
+        hash *= 1099511628211ull;
     }
     return hash;
 }
+
 
 enum class StringStorage : uint8_t
 {
@@ -33,7 +34,7 @@ enum class StringStorage : uint8_t
 struct CapyString
 {
     const char* Data = nullptr;
-    uint32_t    Size = 0;
+    uint64_t    Size = 0;
     StringStorage Storage = StringStorage::Literal;
 
     inline const char* c_str() const { return Data ? Data : ""; }
@@ -94,16 +95,16 @@ struct CapyStringArena
 // so we can store them and their pointers for pointers comparisons instead of strncmp(s)
 struct CapyStringTable
 {
-    std::unordered_map<uint32_t, const char*> Table;
+    std::unordered_map<uint64_t, const char*> Table;
 
     CapyString intern(const char* s, CapyStringArena& arena)
     {
-        uint32_t hash = generate_hash(s);
+        uint64_t hash = generate_hash(s);
 
         auto it = Table.find(hash);
         if (it != Table.end())
         {
-            return { it->second, (uint32_t)strlen(s), StringStorage::Interned };
+            return { it->second, (uint64_t)strlen(s), StringStorage::Interned };
         }
 
         size_t len = strlen(s) + 1;
@@ -113,7 +114,7 @@ struct CapyStringTable
         memcpy(buf, s, len);
         Table[hash] = buf;
 
-        return { buf, (uint32_t)(len - 1), StringStorage::Interned };
+        return { buf, (uint64_t)(len - 1), StringStorage::Interned };
     }
 
     void clear() { Table.clear(); }
@@ -172,7 +173,7 @@ static constexpr ValueType get_value_type()
     if constexpr (std::is_same_v<T, int32_t>) return ValueType::INT32;
     if constexpr (std::is_same_v<T, int64_t>) return ValueType::INT64;
     if constexpr (std::is_same_v<T, uint16_t>) return ValueType::UINT16;
-    if constexpr (std::is_same_v<T, uint32_t>) return ValueType::UINT32;
+    if constexpr (std::is_same_v<T, uint64_t>) return ValueType::UINT32;
     if constexpr (std::is_same_v<T, uint64_t>) return ValueType::UINT64;
     if constexpr (std::is_same_v<T, float>) return ValueType::FLOAT;
     if constexpr (std::is_same_v<T, double>) return ValueType::DOUBLE;
@@ -239,7 +240,7 @@ struct CapyField
     uint64_t Size = 0;
     bool ClassMember = false;
     
-    std::unordered_map<uint32_t, SubField> SubFields;
+    std::unordered_map<uint64_t, SubField> SubFields;
 
     CapyString FieldTypeString;
 
@@ -298,8 +299,8 @@ struct CapyMethod
 
 struct CapyVTable
 {
-    std::unordered_map<uint32_t, std::unique_ptr<CapyMethod>> Methods;
-    std::unordered_map<uint32_t, std::unique_ptr<CapyField>> Fields;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyMethod>> Methods;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyField>> Fields;
 
     CapyVTable()
         : Methods(),
@@ -327,8 +328,8 @@ struct CapyClass
     size_t ClassSize = 0;
     size_t Allignment = 16;
 
-    std::unordered_map<uint32_t, SubField> SubFields;
-    std::unordered_map<uint32_t, BaseClass> BaseClasses;
+    std::unordered_map<uint64_t, SubField> SubFields;
+    std::unordered_map<uint64_t, BaseClass> BaseClasses;
 
     CapyClass()
         : NameSpace(capy_string_literal("")),
@@ -349,8 +350,8 @@ struct CapyClass
 };
 
 struct CapyImage {
-    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> Classes;
-    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> Structures;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyClass>> Classes;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyClass>> Structures;
 
     CapyImage()
         : Classes()
@@ -449,14 +450,14 @@ struct CapyObject
 };
 
 struct CapyDomain {
-    std::unordered_map<uint32_t, std::unique_ptr<CapyLibrary>> Libraries;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyLibrary>> Libraries;
     std::vector<CapyString> CoreLibraries;
 
     CapyStringArena Arena{1024 * 1024};
     CapyStringTable Table;
 
-    std::unordered_map<uint32_t, uint64_t> StoredSizes;
-    std::unordered_map<uint32_t, std::unique_ptr<CapyObject>> LiveObjects;
+    std::unordered_map<uint64_t, uint64_t> StoredSizes;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyObject>> LiveObjects;
 
     CapyDomain()
         : Libraries(),
@@ -491,7 +492,7 @@ struct CapyActiveDomain {
     std::unique_ptr<CapyDomain> Runtime;
     CapyJITStorage JITStorage;
 
-    std::unordered_map<uint32_t, void*> InternalCalls;
+    std::unordered_map<uint64_t, void*> InternalCalls;
     std::mutex DomainReloadMutex;
 };
 
@@ -499,11 +500,11 @@ struct CapyConfigStorage
 {
     bool IgnoreEmptyNamespaces = false;
 
-    std::unordered_map<uint32_t, std::vector<BaseClass>> ClassMap;
-    std::unordered_map<uint32_t, std::vector<BaseClass>> StructMap;
-    std::unordered_map<uint32_t, BaseClass> CoreDataStructures;
-    std::unordered_map<uint32_t, CapyString> KnownClassNames;
-    std::unordered_map<uint32_t, CapyString> KnownStructNames;
+    std::unordered_map<uint64_t, std::vector<BaseClass>> ClassMap;
+    std::unordered_map<uint64_t, std::vector<BaseClass>> StructMap;
+    std::unordered_map<uint64_t, BaseClass> CoreDataStructures;
+    std::unordered_map<uint64_t, CapyString> KnownClassNames;
+    std::unordered_map<uint64_t, CapyString> KnownStructNames;
     std::vector<CapyString> IgnoredNamespaces;
     std::vector<CapyString> IgnoredClassNames;
     std::vector<CapyString> IgnoredNames;

@@ -312,6 +312,7 @@ void capy_reload_domain()
     }
 
     /* 2. Destroy domain */
+    
     active.Runtime.reset();
 
     /* 3. Create new domain */
@@ -418,7 +419,7 @@ std::string capy_dump_domain()
     return str;
 }
 
-void capy_register_class_or_struct_size(uint32_t klassHash, size_t size)
+void capy_register_class_or_struct_size(uint64_t klassHash, size_t size)
 {
     g_Storage.Active.Runtime->StoredSizes[klassHash] = size;
 }
@@ -427,7 +428,7 @@ uint64_t capy_get_class_or_struct_size(const CapyString& nameSpace, const CapySt
 {
     CapyString fullName = join_names({nameSpace, className});
 
-    uint32_t classHash = generate_hash(fullName.c_str());
+    uint64_t classHash = generate_hash(fullName.c_str());
 
     if (!g_Storage.Active.Runtime->StoredSizes.contains(classHash))
         return 0;
@@ -496,7 +497,7 @@ std::vector<CapyField*> capy_sort_and_set_fields_offset_from_class(CapyClass* kl
     return sortedFields;
 }
 
-void capy_recalculate_class_size(uint32_t klassHash, CapyClass* klass)
+void capy_recalculate_class_size(uint64_t klassHash, CapyClass* klass)
 {
     uint64_t totalSize = 0;
     for (auto& [_, field] : klass->VTable->Fields)
@@ -618,7 +619,7 @@ void capy_reload_libraries_into_domain()
 
                 CapyString fullName = join_names({nameSpace, className, field->Name});
 
-                uint32_t fieldHash = generate_hash(fullName.c_str());
+                uint64_t fieldHash = generate_hash(fullName.c_str());
                 klass->VTable->Fields[fieldHash] = std::make_unique<CapyField>(*field);
             }
         }
@@ -662,7 +663,7 @@ CapyLibrary* capy_domain_library_open(const std::string& binName, bool isCore)
         return nullptr;
     }
 
-    uint32_t libHash = generate_hash(fullPath.filename().string());
+    uint64_t libHash = generate_hash(fullPath.filename().string());
 
     if (cd->Libraries.find(libHash) != cd->Libraries.end())
     {
@@ -696,8 +697,8 @@ CapyLibrary* capy_domain_library_open(const std::string& binName, bool isCore)
         return nullptr;
     }
 
-    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> collectedClasses;
-    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> collectedStructs;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyClass>> collectedClasses;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyClass>> collectedStructs;
 
     for (auto& sym : symbols)
     {
@@ -705,7 +706,7 @@ CapyLibrary* capy_domain_library_open(const std::string& binName, bool isCore)
         if (!sym.Signature.empty())
             handle = dlsym(instance, sym.Signature.c_str());
         
-        uint32_t callHash = generate_hash(sym.Name.c_str());
+        uint64_t callHash = generate_hash(sym.Name.c_str());
 
         // Try internal calls first (highest priority)
         if (g_Storage.Active.InternalCalls.contains(callHash))
@@ -725,7 +726,7 @@ CapyLibrary* capy_domain_library_open(const std::string& binName, bool isCore)
 
         // Ensure class exists or create new
         CapyClass* klass = nullptr;
-        uint32_t classHash = generate_hash(fullClassName.c_str());
+        uint64_t classHash = generate_hash(fullClassName.c_str());
 
         if (isCore)
         {
@@ -783,7 +784,7 @@ CapyLibrary* capy_domain_library_open(const std::string& binName, bool isCore)
             field->SymbolMetaData = sym;
             CapyString fullName = join_names({nameSpace, className, name});
 
-            uint32_t fieldHash = generate_hash(fullName.c_str());
+            uint64_t fieldHash = generate_hash(fullName.c_str());
             klass->VTable->Fields[fieldHash] = std::move(field);
         }
         else
@@ -807,7 +808,7 @@ CapyLibrary* capy_domain_library_open(const std::string& binName, bool isCore)
 
             method->SymbolMetaData = sym;
             CapyString fullName = join_names({nameSpace, className, name});
-            uint32_t methodHash = generate_hash(fullName.c_str());
+            uint64_t methodHash = generate_hash(fullName.c_str());
             klass->VTable->Methods[methodHash] = std::move(method);
         }
     }
@@ -880,7 +881,7 @@ CapyClass* capy_class_from_name(CapyImage* i, const std::string& nameSpace, cons
     else if (!className.empty())
         fullName += className;
 
-    uint32_t classHash = generate_hash(fullName);
+    uint64_t classHash = generate_hash(fullName);
     if (i->Classes.find(classHash) != i->Classes.end())
         return i->Classes.at(classHash).get();
 
@@ -900,7 +901,7 @@ CapyClass* capy_class_from_name(const std::string& nameSpace, const std::string&
     else if (!className.empty())
         fullName += className;
 
-    uint32_t classHash = generate_hash(fullName);
+    uint64_t classHash = generate_hash(fullName);
     for (auto& [_, libraries] : g_Storage.Active.Runtime->Libraries)
     {
         CapyImage* i = libraries->Image.get();
@@ -919,13 +920,13 @@ CapyClass* capy_class_from_name(const std::string& nameSpace, const std::string&
 CapyMethod* capy_method_from_class(CapyClass* c, const std::string& functionName)
 {
     CapyString fullName = join_names({ c->NameSpace, c->ClassName, capy_string_intern(functionName.c_str()) });
-    uint32_t funcHash = generate_hash(fullName.c_str());
+    uint64_t funcHash = generate_hash(fullName.c_str());
     return c->VTable->Methods[funcHash].get();
 }
 
 CapyField* capy_field_from_class(CapyClass* c, const std::string& fieldName)
 {
-    uint32_t fieldHash = generate_hash(fieldName);
+    uint64_t fieldHash = generate_hash(fieldName);
     return c->VTable->Fields[fieldHash].get();
 }
 
@@ -969,7 +970,7 @@ void capy_field_data_get(CapyObject* instance, CapyClass* cc, const std::string&
         CapyString returnType = capy_string_intern(cf->SymbolMetaData.ReturnType);
         CapyString fullName = join_names({ nameSpace, returnType, subFieldName});
 
-        uint32_t fieldHash = generate_hash(fullName.c_str());
+        uint64_t fieldHash = generate_hash(fullName.c_str());
 
         sizeOverride = cf->SubFields[fieldHash].Size;
         offsetOverride = cf->SubFields[fieldHash].Offset;
@@ -981,7 +982,7 @@ void capy_field_data_get(CapyObject* instance, CapyClass* cc, const std::string&
         {
             CapyString fullName = join_names({baseClass.NameSpace, baseClass.ClassName, subFieldName});
 
-            uint32_t fieldHash = generate_hash(fullName.c_str());
+            uint64_t fieldHash = generate_hash(fullName.c_str());
 
             if (!cc->SubFields.contains(fieldHash))
                 continue;
@@ -1047,7 +1048,7 @@ void capy_field_data_set(CapyObject* instance, CapyClass* cc, const std::string&
         CapyString returnType = capy_string_intern(cf->SymbolMetaData.ReturnType);
         CapyString fullName = join_names({ nameSpace, returnType, subFieldName});
 
-        uint32_t fieldHash = generate_hash(fullName.c_str());
+        uint64_t fieldHash = generate_hash(fullName.c_str());
 
         sizeOverride = cf->SubFields[fieldHash].Size;
         offsetOverride = cf->SubFields[fieldHash].Offset;
@@ -1059,7 +1060,7 @@ void capy_field_data_set(CapyObject* instance, CapyClass* cc, const std::string&
         {
             CapyString fullName = join_names({baseClass.NameSpace, baseClass.ClassName, subFieldName});
 
-            uint32_t fieldHash = generate_hash(fullName.c_str());
+            uint64_t fieldHash = generate_hash(fullName.c_str());
 
             if (!cc->SubFields.contains(fieldHash))
                 continue;
@@ -1135,7 +1136,7 @@ void capy_add_internal_call(const std::string& name, void* functionSymbol)
     auto* cd = g_Storage.Active.Runtime.get();
 
     auto& storage = g_Storage.Active;
-    uint32_t callHash = generate_hash(name);
+    uint64_t callHash = generate_hash(name);
     if (storage.InternalCalls.contains(callHash)) return;
 
     storage.InternalCalls[callHash] = functionSymbol;
@@ -1152,7 +1153,7 @@ void capy_add_internal_call(const std::string& name, void* functionSymbol)
         {
             for (auto& [symHash, sym] : cls->VTable->Fields)
             {
-                uint32_t nameHash = generate_hash(name);
+                uint64_t nameHash = generate_hash(name);
                 if (symHash == nameHash)
                 {
                     // Directly patch the pointer in the plugin
@@ -1207,7 +1208,7 @@ CapyObject* capy_instantiate_object(CapyClass* klass)
 
     CapyString fullName = join_names({klass->NameSpace, klass->ClassName});
 
-    uint32_t classHash = generate_hash(fullName.c_str());
+    uint64_t classHash = generate_hash(fullName.c_str());
 
     g_Storage.Active.Runtime->LiveObjects[classHash] = std::move(obj);
 

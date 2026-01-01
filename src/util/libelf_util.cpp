@@ -148,7 +148,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<CapyString>& scope_st
 
         CapyString full_scope = join_scope(scope_stack, domain);
 
-        uint32_t nameHash = generate_hash(full_scope.c_str());
+        uint64_t nameHash = generate_hash(full_scope.c_str());
 
         if (is_classname)
             storage.Config.ClassMap[nameHash] = classes;
@@ -187,7 +187,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<CapyString>& scope_st
             size_t pointer = paramTypeStr.rfind("*");
             if (pointer != std::string::npos)
             {
-                uint32_t typeNameHash = generate_hash(paramTypeStr.substr(0, pointer).c_str());
+                uint64_t typeNameHash = generate_hash(paramTypeStr.substr(0, pointer).c_str());
 
                 std::vector<CapyString> fullScope(scope_stack);
 
@@ -201,7 +201,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<CapyString>& scope_st
 
                 CapyString className(fullScope[scopeSize - 2]);
 
-                uint32_t classHash = generate_hash(className.c_str());
+                uint64_t classHash = generate_hash(className.c_str());
 
                 if (typeNameHash == classHash)
                 {
@@ -232,7 +232,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<CapyString>& scope_st
         {
             CapyString className = fullScope[scopeSize - 1];
 
-            uint32_t classHash = generate_hash(className.c_str());
+            uint64_t classHash = generate_hash(className.c_str());
 
             bool found = false;
 
@@ -347,7 +347,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<CapyString>& scope_st
         {
             CapyString className = fullScope[scopeSize - 1];
 
-            uint32_t classHash = generate_hash(className.c_str());
+            uint64_t classHash = generate_hash(className.c_str());
 
             bool found = false;
 
@@ -431,7 +431,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<CapyString>& scope_st
         {
             CapyString className = fullScope[scopeSize - 1];
 
-            uint32_t classHash = generate_hash(className.c_str());
+            uint64_t classHash = generate_hash(className.c_str());
 
             bool found = false;
 

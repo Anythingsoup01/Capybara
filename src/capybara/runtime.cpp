@@ -29,7 +29,7 @@ ValueType string_to_value_type(const std::string& value)
     if (strs_n_equal(value, { "unsigned short", "uint16_t" }))
         return ValueType::UINT16;
 
-    if (strs_n_equal(value, { "unsigned int", "uint32_t" }))
+    if (strs_n_equal(value, { "unsigned int", "uint64_t" }))
         return ValueType::UINT32;
 
     if (strs_n_equal(value, { "unsigned long", "uint64_t" }))
@@ -55,7 +55,7 @@ size_t type_size(ValueType type)
         case ValueType::INT32: return sizeof(int32_t);
         case ValueType::INT64: return sizeof(int64_t);
         case ValueType::UINT16: return sizeof(uint16_t);
-        case ValueType::UINT32: return sizeof(uint32_t);
+        case ValueType::UINT32: return sizeof(uint64_t);
         case ValueType::UINT64: return sizeof(uint64_t);
         case ValueType::FLOAT: return sizeof(float);
         case ValueType::DOUBLE: return sizeof(double);
@@ -71,7 +71,7 @@ CapyString capy_string_literal(const char* s)
 {
     return {
         .Data = s,
-        .Size = (uint32_t)strlen(s),
+        .Size = (uint64_t)strlen(s),
         .Storage = StringStorage::Literal
     };
 }
@@ -83,7 +83,7 @@ CapyString capy_string_heap(const char* s)
     memcpy(buf, s, len);
     return {
         .Data = buf,
-        .Size = (uint32_t)(len - 1),
+        .Size = (uint64_t)(len - 1),
         .Storage = StringStorage::Heap
     };
 }
@@ -99,7 +99,7 @@ CapyString capy_string_arena(CapyStringArena& arena, const char* s)
 
     memcpy(buf, s, len + 1); // Copy including null terminator
 
-    return { buf, static_cast<uint32_t>(len), StringStorage::Arena };
+    return { buf, static_cast<uint64_t>(len), StringStorage::Arena };
 }
 
 static CapyString capy_string_intern_internal(const char* s)

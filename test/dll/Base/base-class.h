@@ -20,6 +20,6 @@ namespace DLL
         int Add(int a, int b);
 
 
-        uint32_t ID;
+        uint64_t ID;
     };
 }
