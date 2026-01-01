@@ -4,65 +4,100 @@
 #include "util/cxxabi_util.h"
 
 // Get the name of a type DIE
-std::string get_short_name(const dwarf::die& die)
+static CapyString get_short_name(const dwarf::die& die, CapyDomain* domain)
 {
     // fallback: mangled name
     if (die.has(dwarf::DW_AT::name))
-        return die[dwarf::DW_AT::name].as_string();
+        return capy_string_arena(domain->Arena, die[dwarf::DW_AT::name].as_string().c_str());
     // fallback: mangled name
     if (die.has(dwarf::DW_AT::linkage_name))
-        return die[dwarf::DW_AT::linkage_name].as_string();
+        return capy_string_arena(domain->Arena, die[dwarf::DW_AT::linkage_name].as_string().c_str());
 
-    return "<anon>";
+    return capy_string_literal("<anon>");
 }
 
-std::string resolve_type(const dwarf::die& type_die)
+static CapyString resolve_type(const dwarf::die& type_die, CapyDomain* domain)
 {
     auto tag = type_die.tag;
 
     if (type_die.has(dwarf::DW_AT::name))
-        return type_die[dwarf::DW_AT::name].as_string();
+        return capy_string_arena(domain->Arena, type_die[dwarf::DW_AT::name].as_string().c_str());
 
     switch(tag) {
         case dwarf::DW_TAG::pointer_type:
             if (type_die.has(dwarf::DW_AT::type))
-                return resolve_type(type_die[dwarf::DW_AT::type].as_reference()) + "*";
-            return "void*";
+            {
+                CapyString base = resolve_type(type_die[dwarf::DW_AT::type].as_reference(), domain);
+                return capy_string_arena(domain->Arena, (std::string(base.c_str()) + "*").c_str());
+            }
+            return capy_string_literal("void*");
         case dwarf::DW_TAG::const_type:
             if (type_die.has(dwarf::DW_AT::type))
-                return resolve_type(type_die[dwarf::DW_AT::type].as_reference()) + " const";
-            return "const";
+            {
+                CapyString base = resolve_type(type_die[dwarf::DW_AT::type].as_reference(), domain);
+                return capy_string_arena(domain->Arena, (std::string(base.c_str()) + " const").c_str());
+            }
+            return capy_string_literal("const");
         case dwarf::DW_TAG::reference_type:
             if (type_die.has(dwarf::DW_AT::type))
-                return resolve_type(type_die[dwarf::DW_AT::type].as_reference()) + "&";
-            return "<ref>";
+            {
+                CapyString base = resolve_type(type_die[dwarf::DW_AT::type].as_reference(), domain);
+                return capy_string_arena(domain->Arena, (std::string(base.c_str()) + "&").c_str());
+            }
+            return capy_string_literal("<ref>");
         case dwarf::DW_TAG::rvalue_reference_type:
             if (type_die.has(dwarf::DW_AT::type))
-                return resolve_type(type_die[dwarf::DW_AT::type].as_reference()) + "&&";
-            return "<rref>";
+            {
+                CapyString base = resolve_type(type_die[dwarf::DW_AT::type].as_reference(), domain);
+                return capy_string_arena(domain->Arena, (std::string(base.c_str()) + "&&").c_str());
+            }
+            return capy_string_literal("<rref>");
         default:
-            return "<unnamed-type>";
+            return capy_string_literal("<unnamed-type>");
     }
 }
 
-std::string get_return_type(const dwarf::die& die)
+static CapyString get_return_type(const dwarf::die& die, CapyDomain* domain)
 {
     if (die.has(dwarf::DW_AT::type)) {
         try {
             dwarf::die typeDie = die[dwarf::DW_AT::type].as_reference();
-            return resolve_type(typeDie);
+            return resolve_type(typeDie, domain);
         } catch (...) {
-            return "void*"; // fallback to generic pointer
+            return capy_string_literal("void*"); // fallback to generic pointer
         }
     }
     // DWARF omitted return type — assume unknown, default to void*
-    return "void*";
+    return capy_string_literal("void*");
 } 
 
-void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_stack, RuntimeStorage& storage, std::vector<_SymbolMetaData>& outSymbols)
+static inline CapyString join_scope(const std::vector<CapyString>& scope_stack, CapyDomain* domain)
+{
+    if (scope_stack.empty())
+        return capy_string_literal("");
+
+    std::vector<CapyString> goodStack;
+    for (auto& scope : scope_stack)
+    {
+        if (scope.Data)
+            goodStack.push_back(scope);
+    }
+
+    std::string tmp;
+    for (size_t i = 0; i < goodStack.size(); ++i)
+    {
+        if (i > 0) tmp += "::";
+        tmp += goodStack[i].Data; // copy from arena/literal string
+    }
+
+    return capy_string_arena(domain->Arena, tmp.c_str());
+}
+
+void traverse_and_collect(const dwarf::die& d, std::vector<CapyString>& scope_stack, RuntimeStorage& storage, std::vector<_SymbolMetaData>& outSymbols)
 {
     auto& cfg = storage.Config;
-    std::string name = get_short_name(d);
+    auto* domain = storage.Active.Runtime.get();
+    CapyString name = get_short_name(d, domain);
 
     bool is_namespace = d.tag == dwarf::DW_TAG::namespace_;
     bool is_classname = d.tag == dwarf::DW_TAG::class_type;
@@ -71,15 +106,16 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
 
     bool is_scope = is_namespace || is_classname || is_structure || is_union;
 
-    if (is_namespace && !name.empty() && strs_n_equal(name, cfg.IgnoredNamespaces))
+    if (is_namespace && !name.empty() && m_strs_n_equal(name, cfg.IgnoredNamespaces))
         return;
-    if (is_classname && !name.empty() && strs_n_equal(name, cfg.IgnoredClassNames))
+    if (is_classname && !name.empty() && m_strs_n_equal(name, cfg.IgnoredClassNames))
         return;
-    if (is_structure && !name.empty() && strs_n_equal(name, cfg.IgnoredClassNames))
+    if (is_structure && !name.empty() && m_strs_n_equal(name, cfg.IgnoredClassNames))
         return;
 
     if (is_scope && !name.empty())
         scope_stack.push_back(name);
+
 
     if (is_classname || is_structure)
     {
@@ -89,43 +125,31 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
             if (child.tag == dwarf::DW_TAG::inheritance && child.has(dwarf::DW_AT::type))
             {
                 dwarf::die base_die = child[dwarf::DW_AT::type].as_reference();
-                std::string base_name = get_short_name(base_die);
+                CapyString base_name = get_short_name(base_die, domain);
                 
                 size_t vectorSize = scope_stack.size();
 
-                std::vector<std::string> namespaceScope(scope_stack);
+                std::vector<CapyString> namespaceScope(scope_stack.begin(), scope_stack.end() - 1);
+                CapyString qualified_name = join_scope(namespaceScope, domain);
 
-                namespaceScope.pop_back();
-
-
-                std::string qualified_name;
-                for (size_t i = 0; i < namespaceScope.size(); ++i) {
-                    if (i > 0) qualified_name += "::";
-                    qualified_name += namespaceScope[i];
-                }
 
                 classes.push_back({ qualified_name, base_name});
                 if (is_classname)
-                    storage.Config.KnownClassNames.push_back(base_name);
+                    storage.Config.KnownClassNames[generate_hash(base_name.c_str())] = base_name;
                 else
-                    storage.Config.KnownStructNames.push_back(base_name);
+                    storage.Config.KnownStructNames[generate_hash(base_name.c_str())] = base_name;
             }
         }
 
         if (is_classname)
-            storage.Config.KnownClassNames.push_back(name);
+            storage.Config.KnownClassNames[generate_hash(name.c_str())] = name;
         else
-            storage.Config.KnownStructNames.push_back(name);
+            storage.Config.KnownStructNames[generate_hash(name.c_str())] = name;
 
-        std::vector<std::string> full_scope(scope_stack);
+        CapyString full_scope = join_scope(scope_stack, domain);
 
-        std::string qualified_name;
-        for (size_t i = 0; i < full_scope.size(); ++i) {
-            if (i > 0) qualified_name += "::";
-            qualified_name += full_scope[i];
-        }
+        uint64_t nameHash = generate_hash(full_scope.c_str());
 
-        uint32_t nameHash = generate_hash(qualified_name);
         if (is_classname)
             storage.Config.ClassMap[nameHash] = classes;
         else
@@ -138,18 +162,14 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         if (scope_stack.empty() && cfg.IgnoreEmptyNamespaces) return;
         if (strncmp(name.c_str(), "_ZN", 3) == 0) return;
 
-        std::string qualified_name;
-        for (size_t i = 0; i < scope_stack.size(); ++i) {
-            if (i > 0) qualified_name += "::";
-            qualified_name += scope_stack[i];
-        }
+        CapyString qualified_name = join_scope(scope_stack, domain);
 
         _SymbolMetaData sym;
-        if (strs_n_equal(name, {"<anon>"})) return;
+        if (strs_n_equal(name.c_str(), {"<anon>"})) return;
 
         sym.Name = name;
         sym.Namespace = qualified_name;
-        sym.ReturnType = get_return_type(d);
+        sym.ReturnType = get_return_type(d, domain);
         sym.IsVariable = false;
         sym.IsClassInstance = false;
         sym.Offset = 0;
@@ -158,19 +178,18 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
 
         for (auto& child : d)
         {
-            if (child.tag != dwarf::DW_TAG::formal_parameter)
-                continue;
+            if (child.tag != dwarf::DW_TAG::formal_parameter) continue;
+            if (!child.has(dwarf::DW_AT::type)) continue;
 
-            if (!child.has(dwarf::DW_AT::type))
-                continue;
+            CapyString paramType = resolve_type(child[dwarf::DW_AT::type].as_reference(), domain);
+            std::string paramTypeStr(paramType.c_str());
 
-            std::string paramType = resolve_type(child[dwarf::DW_AT::type].as_reference());
-            size_t pointer = paramType.rfind("*");
+            size_t pointer = paramTypeStr.rfind("*");
             if (pointer != std::string::npos)
             {
-                std::string typeName = paramType.substr(0, pointer);
+                uint64_t typeNameHash = generate_hash(paramTypeStr.substr(0, pointer).c_str());
 
-                std::vector<std::string> fullScope(scope_stack);
+                std::vector<CapyString> fullScope(scope_stack);
 
                 size_t scopeSize = fullScope.size();
 
@@ -180,18 +199,18 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
                     continue;
                 }
 
-                std::string className = fullScope[scopeSize - 2];
+                CapyString className(fullScope[scopeSize - 2]);
 
-                if (className == typeName)
+                uint64_t classHash = generate_hash(className.c_str());
+
+                if (typeNameHash == classHash)
                 {
-                    for (auto& name : cfg.KnownClassNames)
+                    auto it = cfg.KnownClassNames.find(classHash);
+                    if (it == cfg.KnownClassNames.end())
                     {
-                        if (name == typeName)
-                        {
-                            sym.IsClassInstance = true;
-                            continue;
-                        }
+                        cfg.KnownClassNames[classHash] = className;
                     }
+
                     sym.IsClassInstance = true;
                 }
                 else
@@ -201,10 +220,69 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
             }
             else
             {
-                if (paramType.empty())
-                    continue;
-
                 sym.ParameterTypes.push_back(paramType);
+            }
+        }
+
+        std::vector<CapyString> fullScope(scope_stack);
+
+        size_t scopeSize = fullScope.size();
+
+        if (scopeSize >= 1)
+        {
+            CapyString className = fullScope[scopeSize - 1];
+
+            uint64_t classHash = generate_hash(className.c_str());
+
+            bool found = false;
+
+            {
+                auto it = cfg.KnownClassNames.find(classHash);
+                if (it != cfg.KnownClassNames.end())
+                {
+                    sym.ClassName = it->second;
+                    size_t nsLen = sym.Namespace.length();
+                    size_t clsLen = className.length();
+
+                    if (nsLen > clsLen + 1)   // ensure "A::B" minimum
+                    {
+                        size_t pos = nsLen - clsLen - 2;
+                        sym.Namespace = capy_string_arena(domain->Arena,
+                                std::string(sym.Namespace.c_str(), pos).c_str());
+                    }
+                    else
+                    {
+                        sym.Namespace = capy_string_literal("");
+                    }
+
+                    sym.IsStruct = false;
+                    found = true;
+                }
+            }
+
+            if (!found)
+            {
+                auto it = cfg.KnownStructNames.find(classHash);
+                if (it != cfg.KnownStructNames.end())
+                {
+                    sym.ClassName = it->second;
+                    size_t nsLen = sym.Namespace.length();
+                    size_t clsLen = className.length();
+
+                    if (nsLen > clsLen + 1)   // ensure "A::B" minimum
+                    {
+                        size_t pos = nsLen - clsLen - 2;
+                        sym.Namespace = capy_string_arena(domain->Arena,
+                                std::string(sym.Namespace.c_str(), pos).c_str());
+                    }
+                    else
+                    {
+                        sym.Namespace = capy_string_literal("");
+                    }
+
+                    sym.IsStruct = true;
+                    found = true;
+                }
             }
         }
 
@@ -216,13 +294,8 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
     // ---- Process member variables ----
     if (d.tag == dwarf::DW_TAG::member)
     {
-        std::vector<std::string> full_scope(scope_stack);
+        CapyString qualified_name = join_scope(scope_stack, domain);
 
-        std::string qualified_name;
-        for (size_t i = 0; i < full_scope.size(); ++i) {
-            if (i > 0) qualified_name += "::";
-            qualified_name += full_scope[i];
-        }
 
         uint64_t offset = 0;
 
@@ -254,17 +327,78 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         // If we get an instance of Class* this,
         // then we will convert it to the ClassName.
         _SymbolMetaData sym = _SymbolMetaData();
-        std::string name = get_short_name(d);
-        if (strs_n_equal(name, cfg.IgnoredNames)) return;
+        CapyString name = get_short_name(d, domain);
+        if (m_strs_n_equal(name, cfg.IgnoredNames)) return;
 
 
         sym.Name = name;
         sym.Namespace = qualified_name;
-        sym.ReturnType = get_return_type(d);
+        sym.ReturnType = get_return_type(d, domain);
         sym.IsVariable = true;
         sym.IsClassInstance = true;
         sym.Offset = offset;
 
+
+        std::vector<CapyString> fullScope(scope_stack);
+
+        size_t scopeSize = fullScope.size();
+
+        if (scopeSize >= 1)
+        {
+            CapyString className = fullScope[scopeSize - 1];
+
+            uint64_t classHash = generate_hash(className.c_str());
+
+            bool found = false;
+
+            {
+                auto it = cfg.KnownClassNames.find(classHash);
+                if (it != cfg.KnownClassNames.end())
+                {
+                    sym.ClassName = it->second;
+
+                    size_t nsLen = sym.Namespace.length();
+                    size_t clsLen = className.length();
+
+                    if (nsLen > clsLen + 1)   // ensure "A::B" minimum
+                    {
+                        size_t pos = nsLen - clsLen - 2;
+                        sym.Namespace = capy_string_arena(domain->Arena,
+                                std::string(sym.Namespace.c_str(), pos).c_str());
+                    }
+                    else
+                    {
+                        sym.Namespace = capy_string_literal("");
+                    }
+                    sym.IsStruct = false;
+                    found = true;
+                }
+            }
+
+            if (!found)
+            {
+                auto it = cfg.KnownStructNames.find(classHash);
+                if (it != cfg.KnownStructNames.end())
+                {
+                    sym.ClassName = it->second;
+                    size_t nsLen = sym.Namespace.length();
+                    size_t clsLen = className.length();
+
+                    if (nsLen > clsLen + 1)   // ensure "A::B" minimum
+                    {
+                        size_t pos = nsLen - clsLen - 2;
+                        sym.Namespace = capy_string_arena(domain->Arena,
+                                std::string(sym.Namespace.c_str(), pos).c_str());
+                    }
+                    else
+                    {
+                        sym.Namespace = capy_string_literal("");
+                    }
+                    sym.IsStruct = true;
+                    found = true;
+                }
+            }
+        }
 
         outSymbols.push_back(sym);
     }
@@ -274,28 +408,80 @@ void traverse_and_collect(const dwarf::die& d, std::vector<std::string>& scope_s
         if (scope_stack.empty() && cfg.IgnoreEmptyNamespaces)
             return;
 
-        std::vector<std::string> full_scope(scope_stack);
-
-        std::string qualified_name;
-        for (size_t i = 0; i < full_scope.size(); ++i) {
-            if (i > 0) qualified_name += "::";
-            qualified_name += full_scope[i];
-        }
+        CapyString qualified_name = join_scope(scope_stack, domain);
 
         // Intentionally leaving the class name empty
         // If we get an instance of Class* this,
         // then we will convert it to the ClassName.
         _SymbolMetaData sym;
-        std::string name = get_short_name(d);
-        if (strs_n_equal(name, {"<anon>"}))
-            return;
+        CapyString name = get_short_name(d, domain);
+        if (strs_n_equal(name.c_str(), {"<anon>"})) return;
+
         sym.Name = name;
         sym.Namespace = qualified_name;
-        sym.ReturnType = get_return_type(d);
+        sym.ReturnType = get_return_type(d, domain);
         sym.IsVariable = true;
         sym.IsClassInstance = false;
         sym.Offset = 0;
+        std::vector<CapyString> fullScope(scope_stack);
 
+        size_t scopeSize = fullScope.size();
+
+        if (scopeSize >= 1)
+        {
+            CapyString className = fullScope[scopeSize - 1];
+
+            uint64_t classHash = generate_hash(className.c_str());
+
+            bool found = false;
+
+            {
+                auto it = cfg.KnownClassNames.find(classHash);
+                if (it != cfg.KnownClassNames.end())
+                {
+                    sym.ClassName = it->second;
+                    size_t nsLen = sym.Namespace.length();
+                    size_t clsLen = className.length();
+
+                    if (nsLen > clsLen + 1)   // ensure "A::B" minimum
+                    {
+                        size_t pos = nsLen - clsLen - 2;
+                        sym.Namespace = capy_string_arena(domain->Arena,
+                                std::string(sym.Namespace.c_str(), pos).c_str());
+                    }
+                    else
+                    {
+                        sym.Namespace = capy_string_literal("");
+                    }
+                    sym.IsStruct = false;
+                    found = true;
+                }
+            }
+
+            if (!found)
+            {
+                auto it = cfg.KnownStructNames.find(classHash);
+                if (it != cfg.KnownStructNames.end())
+                {
+                    sym.ClassName = it->second;
+                    size_t nsLen = sym.Namespace.length();
+                    size_t clsLen = className.length();
+
+                    if (nsLen > clsLen + 1)   // ensure "A::B" minimum
+                    {
+                        size_t pos = nsLen - clsLen - 2;
+                        sym.Namespace = capy_string_arena(domain->Arena,
+                                std::string(sym.Namespace.c_str(), pos).c_str());
+                    }
+                    else
+                    {
+                        sym.Namespace = capy_string_literal("");
+                    }
+                    sym.IsStruct = true;
+                    found = true;
+                }
+            }
+        }
         outSymbols.push_back(sym);
     }
 
@@ -335,19 +521,13 @@ std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vect
     
     for (auto& sym : symbols)
     {
-        std::string fullName;
-        if (!sym.Namespace.empty())
-            fullName += sym.Namespace + "::";
-        if (!sym.ClassName.empty())
-            fullName += sym.ClassName + "::"; 
+        CapyString fullName = join_scope({ sym.Namespace, sym.ClassName, sym.Name }, storage.Runtime.get());
 
-        fullName += sym.Name;
-
-        auto it = symbolNames.find(fullName);
+        auto it = symbolNames.find(fullName.c_str());
         if (it != symbolNames.end())
         {
             _SymbolMetaData resolved = sym;
-            resolved.Signature = it->second;
+            resolved.Signature = capy_string_arena(storage.Runtime->Arena, it->second.c_str());
             tmp.push_back(resolved);
         }
     }
@@ -358,7 +538,6 @@ std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vect
         if (sym.Offset >= 0 && (sym.IsClassInstance && sym.IsVariable))
         {
             tmp.push_back(sym);
-            continue;
         }
     }
 

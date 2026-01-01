@@ -8,15 +8,147 @@
 
 constexpr size_t INVALID_OFFSET = static_cast<size_t>(-1);
 
+// This is a simple hashing algorithm to let us use uint64_t
+// comparisons instead of string comparisons
+constexpr uint64_t generate_hash(const std::string_view& str)
+{
+    uint64_t hash = 14695981039346656037ull;
+    for (unsigned char c : str)
+    {
+        hash ^= c;
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+
+enum class StringStorage : uint8_t
+{
+    Literal,
+    Heap,
+    Arena,
+    Interned
+};
+
+// This is a basic managed string utilized by the domain, but can be used basically anywhere
+struct CapyString
+{
+    const char* Data = nullptr;
+    uint64_t    Size = 0;
+    StringStorage Storage = StringStorage::Literal;
+
+    inline const char* c_str() const { return Data ? Data : ""; }
+    inline const size_t length() const { return Size; }
+
+    inline const bool empty() const { return Size == 0 || Data == nullptr; }
+    
+    bool operator==(const CapyString& rhs) const
+    {
+        if (this->Storage == StringStorage::Interned &&
+                rhs.Storage  == StringStorage::Interned)
+        {
+            return this->Data == rhs.Data;
+        }
+
+        if (this->Size != rhs.Size)
+            return false;
+
+        return this->Size == 0 || memcmp(this->Data, rhs.Data, this->Size) == 0;
+    }
+};
+
+// This is a const char* memory storage for all our items and doesn't allow for comparisons
+struct CapyStringArena
+{
+    char* Base = nullptr;
+    size_t Capacity = 0;
+    size_t Offset = 0;
+
+    CapyStringArena(size_t size)
+    {
+        Base = (char*)malloc(size);
+        Capacity = size;
+        Offset = 0;
+    }
+
+    ~CapyStringArena()
+    {
+        free(Base);
+        Base = nullptr;
+        Capacity = 0;
+        Offset = 0;
+    }
+
+    char* alloc(size_t len)
+    {
+        if (Offset + len > Capacity) return nullptr;
+        char* ptr = Base + Offset;
+        Offset += len;
+        return ptr;
+    }
+
+    void reset() { Offset = 0; }
+};
+
+
+// This is for strings we plan to compare, ie field names, and are stored seperately
+// so we can store them and their pointers for pointers comparisons instead of strncmp(s)
+struct CapyStringTable
+{
+    std::unordered_map<uint64_t, const char*> Table;
+
+    CapyString intern(const char* s, CapyStringArena& arena)
+    {
+        uint64_t hash = generate_hash(s);
+
+        auto it = Table.find(hash);
+        if (it != Table.end())
+        {
+            return { it->second, (uint64_t)strlen(s), StringStorage::Interned };
+        }
+
+        size_t len = strlen(s) + 1;
+        char* buf = arena.alloc(len);
+        if (!buf) return { nullptr, 0, StringStorage::Interned };
+
+        memcpy(buf, s, len);
+        Table[hash] = buf;
+
+        return { buf, (uint64_t)(len - 1), StringStorage::Interned };
+    }
+
+    void clear() { Table.clear(); }
+};
+
+// This function retures a managed string literal
+CapyString capy_string_literal(const char* s);
+
+// This function returns a heap allocated managed string literal
+CapyString capy_string_heap(const char* s);
+
+// This function returns an arena allocated string
+CapyString capy_string_arena(CapyStringArena& arena, const char* s);
+
+CapyString capy_string_intern(const CapyString& capyString);
+CapyString capy_string_intern(const char* str);
+
+
+// This function will release the managed string literal,
+// Doing this with a Heap string will free the data and shouldn't
+// be used if you intend on using the Heap String afterwards
+void capy_string_release(CapyString& s);
+
+
+
 struct _SymbolMetaData
 {
-    std::string Namespace;
-    std::string ClassName;
-    std::string Name;
-    std::string Signature;
-    std::string ReturnType;
+    CapyString Namespace;
+    CapyString ClassName;
+    CapyString Name;
+    CapyString Signature;
+    CapyString ReturnType;
 
-    std::vector<std::string> ParameterTypes;
+    std::vector<CapyString> ParameterTypes;
 
     bool IsVariable = false;
     bool IsClassInstance = false;
@@ -41,7 +173,7 @@ static constexpr ValueType get_value_type()
     if constexpr (std::is_same_v<T, int32_t>) return ValueType::INT32;
     if constexpr (std::is_same_v<T, int64_t>) return ValueType::INT64;
     if constexpr (std::is_same_v<T, uint16_t>) return ValueType::UINT16;
-    if constexpr (std::is_same_v<T, uint32_t>) return ValueType::UINT32;
+    if constexpr (std::is_same_v<T, uint64_t>) return ValueType::UINT32;
     if constexpr (std::is_same_v<T, uint64_t>) return ValueType::UINT64;
     if constexpr (std::is_same_v<T, float>) return ValueType::FLOAT;
     if constexpr (std::is_same_v<T, double>) return ValueType::DOUBLE;
@@ -56,18 +188,6 @@ ValueType string_to_value_type(const std::string& value);
 // This function will return the corresponding size of the ValueType
 size_t type_size(ValueType type);
 
-// This is a simple hashing algorithm to let us use uint32_t
-// comparisons instead of string comparisons
-constexpr uint32_t generate_hash(const std::string_view& str)
-{
-    uint32_t hash = 2166136261u;
-    for (char c : str)
-    {
-        hash ^= static_cast<uint8_t>(c);
-        hash *= 16777619u;
-    }
-    return hash;
-}
 
 struct alignas(16) RuntimeValue
 {
@@ -106,21 +226,23 @@ struct SubField
 
 struct BaseClass
 {
-    std::string NameSpace;
-    std::string ClassName;
+    CapyString NameSpace;
+    CapyString ClassName;
 };
+
 
 struct CapyField
 {
+    CapyString Name;
     void* SymHandle = nullptr;
     ValueType FieldType = ValueType::VOID;
     uint64_t Offset = 0;
     uint64_t Size = 0;
     bool ClassMember = false;
     
-    std::unordered_map<uint32_t, SubField> SubFields;
+    std::unordered_map<uint64_t, SubField> SubFields;
 
-    std::string FieldTypeString = nullptr;
+    CapyString FieldTypeString;
 
     RuntimeValue DefaultData;
     _SymbolMetaData SymbolMetaData;
@@ -131,7 +253,7 @@ struct CapyField
         Offset(0),
         Size(0),
         ClassMember(false),
-        FieldTypeString(""),
+        FieldTypeString(capy_string_literal("")),
         DefaultData{},                      // zero initialize RuntimeValue
         SymbolMetaData{}                    // uses its own default ctor
     {}
@@ -150,10 +272,10 @@ struct CapyField
 
 struct CapyMethod
 {
+    CapyString Name;
     void* SymHandle = nullptr;
     ValueType ReturnType = ValueType::VOID;
     std::vector<ValueType> Parameters;
-    std::vector<std::string> ParameterTypeStrings;
     bool ClassMember = false;
 
     _SymbolMetaData SymbolMetaData;
@@ -162,7 +284,6 @@ struct CapyMethod
         : SymHandle(nullptr),
         ReturnType(ValueType::VOID),
         Parameters(),
-        ParameterTypeStrings(),
         ClassMember(false),
         SymbolMetaData{}
     {}
@@ -171,7 +292,6 @@ struct CapyMethod
         : SymHandle(nullptr),
           ReturnType(other.ReturnType),
           Parameters(other.Parameters),
-          ParameterTypeStrings(other.ParameterTypeStrings),
           ClassMember(other.ClassMember),
           SymbolMetaData(other.SymbolMetaData)
     {}
@@ -179,8 +299,8 @@ struct CapyMethod
 
 struct CapyVTable
 {
-    std::unordered_map<uint32_t, std::unique_ptr<CapyMethod>> Methods;
-    std::unordered_map<uint32_t, std::unique_ptr<CapyField>> Fields;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyMethod>> Methods;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyField>> Fields;
 
     CapyVTable()
         : Methods(),
@@ -199,8 +319,8 @@ struct CapyVTable
 
 struct CapyClass
 {
-    std::string NameSpace;
-    std::string ClassName;
+    CapyString NameSpace;
+    CapyString ClassName;
     std::unique_ptr<CapyVTable> VTable;
 
     size_t BaseClassSize = 0;
@@ -208,12 +328,12 @@ struct CapyClass
     size_t ClassSize = 0;
     size_t Allignment = 16;
 
-    std::unordered_map<uint32_t, SubField> SubFields;
-    std::unordered_map<uint32_t, BaseClass> BaseClasses;
+    std::unordered_map<uint64_t, SubField> SubFields;
+    std::unordered_map<uint64_t, BaseClass> BaseClasses;
 
     CapyClass()
-        : NameSpace(""),
-        ClassName(""),
+        : NameSpace(capy_string_literal("")),
+        ClassName(capy_string_literal("")),
         VTable(nullptr)
     {}
 
@@ -230,8 +350,8 @@ struct CapyClass
 };
 
 struct CapyImage {
-    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> Classes;
-    std::unordered_map<uint32_t, std::unique_ptr<CapyClass>> Structures;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyClass>> Classes;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyClass>> Structures;
 
     CapyImage()
         : Classes()
@@ -245,7 +365,7 @@ struct CapyImage {
 };
 
 struct CapyLibrary {
-    std::string Name;
+    CapyString Name;
     std::unique_ptr<CapyImage> Image;
     std::filesystem::path LibPath;
     void* SymbolInstance;
@@ -256,7 +376,7 @@ struct CapyLibrary {
     std::unordered_map<uintptr_t, uintptr_t> OriginalRelocs;
 
     CapyLibrary()
-        : Name(""),
+        : Name(capy_string_literal("")),
         Image(nullptr),
         LibPath(),
         SymbolInstance(nullptr),
@@ -330,11 +450,14 @@ struct CapyObject
 };
 
 struct CapyDomain {
-    std::unordered_map<uint32_t, std::unique_ptr<CapyLibrary>> Libraries;
-    std::vector<std::string> CoreLibraries;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyLibrary>> Libraries;
+    std::vector<CapyString> CoreLibraries;
 
-    std::unordered_map<uint32_t, uint64_t> StoredSizes;
-    std::unordered_map<uint32_t, std::unique_ptr<CapyObject>> LiveObjects;
+    CapyStringArena Arena{1024 * 1024};
+    CapyStringTable Table;
+
+    std::unordered_map<uint64_t, uint64_t> StoredSizes;
+    std::unordered_map<uint64_t, std::unique_ptr<CapyObject>> LiveObjects;
 
     CapyDomain()
         : Libraries(),
@@ -369,7 +492,7 @@ struct CapyActiveDomain {
     std::unique_ptr<CapyDomain> Runtime;
     CapyJITStorage JITStorage;
 
-    std::unordered_map<uint32_t, void*> InternalCalls;
+    std::unordered_map<uint64_t, void*> InternalCalls;
     std::mutex DomainReloadMutex;
 };
 
@@ -377,14 +500,14 @@ struct CapyConfigStorage
 {
     bool IgnoreEmptyNamespaces = false;
 
-    std::unordered_map<uint32_t, std::vector<BaseClass>> ClassMap;
-    std::unordered_map<uint32_t, std::vector<BaseClass>> StructMap;
-    std::unordered_map<uint32_t, BaseClass> CoreDataStructures;
-    std::vector<std::string> KnownClassNames;
-    std::vector<std::string> KnownStructNames;
-    std::vector<std::string> IgnoredNamespaces;
-    std::vector<std::string> IgnoredClassNames;
-    std::vector<std::string> IgnoredNames;
+    std::unordered_map<uint64_t, std::vector<BaseClass>> ClassMap;
+    std::unordered_map<uint64_t, std::vector<BaseClass>> StructMap;
+    std::unordered_map<uint64_t, BaseClass> CoreDataStructures;
+    std::unordered_map<uint64_t, CapyString> KnownClassNames;
+    std::unordered_map<uint64_t, CapyString> KnownStructNames;
+    std::vector<CapyString> IgnoredNamespaces;
+    std::vector<CapyString> IgnoredClassNames;
+    std::vector<CapyString> IgnoredNames;
     std::filesystem::path BinaryPath;
 };
 

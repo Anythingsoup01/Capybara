@@ -44,7 +44,7 @@ void capy_jit_set_core_bin_include_path(const std::filesystem::path& includePath
 // narrowing down any extra namespaces you want to get rid of,
 // calling this twice will only increase the amount of namespaces it's ignoring,
 // you should not call this in an infinite loop.
-void capy_set_ignored_namespace(const std::vector<std::string>& ignoredNamespace);
+void capy_set_ignored_namespace(const std::vector<CapyString>& ignoredNamespace);
 
 // This function will ignore completely empty namespaces, however, if there
 // is a class name it will treat it as a namespace
@@ -53,7 +53,7 @@ void capy_set_ignore_empty_namespace(bool active);
 // This function lets you specify any classes you'd like to ignore,
 // I.e. Helper classes, not all that usefull but wanted some continuity
 // between the namespace and classname portion of our symbols
-void capy_set_ignored_classname(const std::vector<std::string>& ignoredClassnames);
+void capy_set_ignored_classname(const std::vector<CapyString>& ignoredClassnames);
 
 // This function is used to unload a domain and all it's libraries
 // by using the domain's name as opposed to it's hash value
@@ -76,7 +76,7 @@ CapyLibrary* capy_domain_library_open(const std::string& binName, bool isCore);
 // This function lets you retrieve a vector of library names that were marked as core,
 // this is useful for making a runtime that needs base classes, I.e. MonoBehavior (for C#),
 // to be linked across multiple libraries.
-std::vector<std::string> capy_get_core_libraries_from_domain();
+std::vector<CapyString> capy_get_core_libraries_from_domain();
 
 // This function is used to get the image of a given library
 CapyImage* capy_library_get_image(CapyLibrary* cl);
