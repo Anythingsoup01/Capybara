@@ -445,7 +445,7 @@ std::vector<CapyField*> capy_sort_and_set_fields_offset_from_class(CapyClass* kl
     }
 
     std::vector<CapyField*> sortedFields;
-    size_t actualOffset = 0;
+    size_t actualOffset = klass->BaseClassSize;
     while(!allFields.empty())
     {
         

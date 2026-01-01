@@ -5,7 +5,7 @@
 
 namespace DLL
 {
-    class Test : public Base // 4 bytes (0)
+    class Test : public Base // 16 bytes (0)
     {
     public:
         void PrintBaseInt();
@@ -14,18 +14,18 @@ namespace DLL
 
 
     private:
-        Base m_Base; // 4 bytes (4)
-        uint64_t ID; // 8 bytes (8)
+        Base m_Base; // 16 bytes (16)
+        uint64_t ID; // 8 bytes (32)
 
-        float m_FloatOne; // 4 bytes (16)
-        float m_FloatTwo; // 4 bytes (20)
-        float m_FloatThree; // 4 bytes (24)
+        float m_FloatOne; // 4 bytes (40)
+        float m_FloatTwo; // 4 bytes (44)
+        float m_FloatThree; // 4 bytes (48)
 
-        bool m_BoolOne; // 1 bytes (28)
-        bool m_BoolTwo; // 1 bytes (29)
-        bool m_BoolThree; // 1 bytes (30)
-                          // total size 31
-                          // minus base 04
-                          // derived size 27
+        bool m_BoolOne; // 1 bytes (52)
+        bool m_BoolTwo; // 1 bytes (53)
+        bool m_BoolThree; // 1 bytes (54)
+                          // total size 55
+                          // minus base 16
+                          // derived size 39
     };
 }

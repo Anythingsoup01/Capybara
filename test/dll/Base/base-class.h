@@ -21,5 +21,6 @@ namespace DLL
 
 
         uint64_t ID;
+        BigChungus Bugs;
     };
 }
