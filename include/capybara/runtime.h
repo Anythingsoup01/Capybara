@@ -160,23 +160,29 @@ struct _SymbolMetaData
 enum class ValueType
 {
     VOID = 0,
-    INT16, INT32, INT64,
-    UINT16, UINT32, UINT64,
-    FLOAT, DOUBLE, BOOL,
+    INT8, INT16, INT32, INT64,
+    UINT8, UINT16, UINT32, UINT64,
+    FLOAT, DOUBLE, LDOUBLE,
+    BOOL, CHAR,
     POINTER,
 };
 
 template<typename T>
 static constexpr ValueType get_value_type()
 {
+    if constexpr (std::is_same_v<T, int8_t>) return ValueType::INT8;
     if constexpr (std::is_same_v<T, int16_t>) return ValueType::INT16;
     if constexpr (std::is_same_v<T, int32_t>) return ValueType::INT32;
     if constexpr (std::is_same_v<T, int64_t>) return ValueType::INT64;
+    if constexpr (std::is_same_v<T, uint8_t>) return ValueType::UINT8;
     if constexpr (std::is_same_v<T, uint16_t>) return ValueType::UINT16;
     if constexpr (std::is_same_v<T, uint64_t>) return ValueType::UINT32;
     if constexpr (std::is_same_v<T, uint64_t>) return ValueType::UINT64;
     if constexpr (std::is_same_v<T, float>) return ValueType::FLOAT;
     if constexpr (std::is_same_v<T, double>) return ValueType::DOUBLE;
+    if constexpr (std::is_same_v<T, long double>) return ValueType::LDOUBLE;
+    if constexpr (std::is_same_v<T, bool>) return ValueType::BOOL;
+    if constexpr (std::is_same_v<T, char8_t>) return ValueType::CHAR;
     if constexpr (std::is_pointer_v<T>) return ValueType::POINTER;
     return ValueType::VOID;
 }

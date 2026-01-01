@@ -17,14 +17,20 @@ ValueType string_to_value_type(const std::string& value)
     if (strs_n_equal(value, { "const std::string", "std::string" }))
         return ValueType::POINTER;
 
+    if (strs_n_equal(value, { "signed char", "int8_t" }))
+        return ValueType::INT8;
+
     if (strs_n_equal(value, { "short", "int16_t" }))
         return ValueType::INT16;
 
     if (strs_n_equal(value, { "int", "int32_t" }))
         return ValueType::INT32;
 
-    if (strs_n_equal(value, { "long", "int64_t" }))
+    if (strs_n_equal(value, { "long long", "int64_t" }))
         return ValueType::INT64;
+
+    if (strs_n_equal(value, { "unsigned char", "uint8_t" }))
+        return ValueType::UINT8;
 
     if (strs_n_equal(value, { "unsigned short", "uint16_t" }))
         return ValueType::UINT16;
@@ -32,7 +38,7 @@ ValueType string_to_value_type(const std::string& value)
     if (strs_n_equal(value, { "unsigned int", "uint64_t" }))
         return ValueType::UINT32;
 
-    if (strs_n_equal(value, { "unsigned long", "uint64_t" }))
+    if (strs_n_equal(value, { "unsigned long long", "uint64_t" }))
         return ValueType::UINT64;
 
     if (strs_n_equal(value, { "float" }))
@@ -41,9 +47,15 @@ ValueType string_to_value_type(const std::string& value)
     if (strs_n_equal(value, { "double" }))
         return ValueType::DOUBLE;
 
+    if (strs_n_equal(value, { "long double" }))
+        return ValueType::LDOUBLE;
+
     if (strs_n_equal(value, { "bool" }))
         return ValueType::BOOL;
-    
+
+    if (strs_n_equal(value, { "char", "char8_t" }))
+        return ValueType::CHAR;
+
     return ValueType::VOID;
 }
 
@@ -51,15 +63,19 @@ size_t type_size(ValueType type)
 {
     switch (type)
     {
+        case ValueType::INT8: return sizeof(int8_t);
         case ValueType::INT16: return sizeof(int16_t);
         case ValueType::INT32: return sizeof(int32_t);
         case ValueType::INT64: return sizeof(int64_t);
+        case ValueType::UINT8: return sizeof(uint8_t);
         case ValueType::UINT16: return sizeof(uint16_t);
         case ValueType::UINT32: return sizeof(uint64_t);
         case ValueType::UINT64: return sizeof(uint64_t);
         case ValueType::FLOAT: return sizeof(float);
         case ValueType::DOUBLE: return sizeof(double);
+        case ValueType::LDOUBLE: return sizeof(long double);
         case ValueType::BOOL: return sizeof(bool);
+        case ValueType::CHAR: return sizeof(char8_t);
         case ValueType::POINTER: return sizeof(void*);
         case ValueType::VOID: return 0;
     }

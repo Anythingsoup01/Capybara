@@ -20,7 +20,6 @@ namespace DLL
         int Add(int a, int b);
 
 
-        uint64_t ID;
-        BigChungus Bugs;
+        uint8_t ID;
     };
 }
