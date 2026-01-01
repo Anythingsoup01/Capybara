@@ -328,6 +328,10 @@ struct CapyClass
     size_t ClassSize = 0;
     size_t Allignment = 16;
 
+    uint64_t Hash;
+
+    bool Resolved = false;
+
     std::unordered_map<uint64_t, SubField> SubFields;
     std::unordered_map<uint64_t, BaseClass> BaseClasses;
 
