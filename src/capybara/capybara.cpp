@@ -70,46 +70,24 @@ static uint64_t make_symbol_hash(std::initializer_list<CapyString> parts)
 static std::string jit_get_compile_command(const std::filesystem::path& filePath)
 {
     auto& jit = g_Storage.Active.JITStorage;
-    std::string coreLibLinks;
-    for (auto& lib : g_Storage.Active.Runtime->CoreLibraries)
-    {
-        std::string libFix;
-        std::string libCheck;
-        if (strs_n_equal(lib.c_str(), {"lib"}))
-            libCheck = lib.c_str() + 3;
-        else 
-            libFix = lib.c_str();
 
-        libFix = libCheck.substr(0, libCheck.length() - 3);
-
-        coreLibLinks.append("-l" + libFix + " ");
-    }
     
     std::filesystem::path rootDir = std::filesystem::current_path();
 
     std::filesystem::path compilePath = rootDir / g_Storage.Config.BinaryPath / filePath.filename();
-    compilePath.replace_extension(".so");
+    compilePath.replace_extension(".o");
 
     std::filesystem::path sourceFile = rootDir / filePath;
     sourceFile.replace_extension(".cpp");
 
     std::stringstream ss;
-    ss << "gcc " << sourceFile << " -o " << compilePath << " \\\n";
+    ss << "gcc -c " << sourceFile << " -o " << compilePath.generic_string() << " \\\n";
     if (!jit.CorePath.empty())
     {
-        ss << "-I" << jit.CorePath.string() << " \\\n";
+        ss << "-I" << jit.CorePath.string() << " -gdwarf-4 \\\n";
     }
-    if (jit.CoreBinaryPaths.size() > 0)
-    {
-        for (auto& path : jit.CoreBinaryPaths)
-        {
-            std::filesystem::path truePath = rootDir / path;
-            ss << "-L" << truePath.parent_path().string() << " ";
-        }
-        ss << "\\\n";
-    }
-    ss << coreLibLinks << "\\\n"
-       << "-fPIC -shared -lstdc++ -gdwarf-4\n";
+
+
     return ss.str();
 }
 
@@ -204,15 +182,8 @@ bool capy_poll()
     auto& jit = g_Storage.Active.JITStorage;
     if (jit.JitCompilationNeeded.exchange(false))
     {
-        std::vector<std::filesystem::path> files_being_compiled;
-
-        {
-            std::lock_guard<std::mutex> lock(jit.JitMutex);
-            files_being_compiled.swap(jit.FilesToCompile); // move pending files
-        }
 
         std::vector<std::string> commands;
-
         {
             std::lock_guard<std::mutex> lock(jit.JitMutex);
             commands.swap(jit.CompilationCommands);
@@ -223,13 +194,72 @@ bool capy_poll()
             system(command.c_str());
         }
 
+        std::vector<std::filesystem::path> files_being_compiled;
+        {
+            std::lock_guard<std::mutex> lock(jit.JitMutex);
+            files_being_compiled.swap(jit.FilesToCompile); // move pending files
+        }
+
         for (auto& path : files_being_compiled)
         {
-            std::filesystem::path soPath = rootDir / g_Storage.Config.BinaryPath / path.filename();
-            soPath.replace_extension(".so");
-            while (!std::filesystem::exists(soPath))
+            std::filesystem::path objPath = rootDir / g_Storage.Config.BinaryPath / path.filename();
+            objPath.replace_extension(".o");
+            while (!std::filesystem::exists(objPath))
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+            uint64_t fileHash = generate_hash(objPath.c_str());
+
+            jit.TrackedObjectFiles[fileHash] = objPath;
         }
+
+        std::unordered_map<uint64_t, std::filesystem::path> trackedFiles;
+        {
+            std::lock_guard<std::mutex> lock(jit.JitMutex);
+            trackedFiles.swap(jit.TrackedObjectFiles);
+        }
+
+        {
+            std::stringstream ss;
+            ss << "gcc -shared -fPIC -gdwarf-4 -lstdc++ ";
+
+            for (auto& [_, path] : trackedFiles)
+            {
+                ss << path.generic_string() << " ";
+            }
+
+            ss << "-o " << g_Storage.Config.BinaryPath.generic_string() << "/CapyBinary.so \\\n";
+
+            std::string coreLibLinks;
+            for (auto& lib : g_Storage.Active.Runtime->CoreLibraries)
+            {
+                std::string libFix;
+                std::string libCheck;
+                if (strs_n_equal(lib.c_str(), {"lib"}))
+                    libCheck = lib.c_str() + 3;
+                else 
+                    libFix = lib.c_str();
+
+                libFix = libCheck.substr(0, libCheck.length() - 3);
+
+                coreLibLinks.append("-l" + libFix + " ");
+            }
+
+            if (jit.CoreBinaryPaths.size() > 0)
+            {
+                for (auto& path : jit.CoreBinaryPaths)
+                {
+                    std::filesystem::path truePath = rootDir / path;
+                    ss << "-L" << truePath.parent_path().string() << " ";
+                }
+                ss << "\\\n";
+            }
+            ss << coreLibLinks << "\n";
+
+            std::cout << ss.str() << "\n";
+
+            system(ss.str().c_str());
+        }
+        
 
         capy_reload_domain();
 
@@ -512,6 +542,7 @@ CapyLibrary* capy_domain_library_open(const std::string& binName, bool isCore)
     {
         std::cerr << "ERROR: Library filed to open at: " << fullPath.string() << "\n";
         close(fd);
+
         return nullptr;
     }
 
@@ -797,6 +828,18 @@ CapyField* capy_field_from_class(CapyClass* c, const std::string& fieldName)
 {
     uint64_t fieldHash = make_symbol_hash({ c->NameSpace, c->ClassName, capy_string_intern(fieldName.c_str()) });
     return c->VTable->Fields[fieldHash].get();
+}
+
+std::vector<CapyField*> capy_fields_from_class(CapyClass* cc)
+{
+    std::vector<CapyField*> tmp;
+
+    for (auto& [_, fld] : cc->VTable->Fields)
+    {
+        tmp.push_back(fld.get());
+    }
+
+    return tmp;
 }
 
 struct FieldResolveResult

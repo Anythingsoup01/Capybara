@@ -102,9 +102,9 @@ int main(int argc, char** argv)
 
     capy_reload_libraries_into_domain();
 
-    CapyLibrary* lib = capy_domain_library_open("test-lib.so", false);
+    CapyLibrary* lib = capy_domain_library_open("CapyBinary.so", false);
 
-#if 1
+#if 0
     CapyImage* img = capy_library_get_image(lib);
 
     ADD_INTERNAL_CALL(Internal_Add);
@@ -124,7 +124,7 @@ int main(int argc, char** argv)
 
     std::cout << "Retrieved Data: " << retrievedData << "\n";
 
-
+#endif
     while (true) 
     {
         if (capy_poll())
@@ -132,7 +132,6 @@ int main(int argc, char** argv)
             std::cout << capy_dump_domain();
         }
     }
-#endif
 
     capy_shutdown();
 

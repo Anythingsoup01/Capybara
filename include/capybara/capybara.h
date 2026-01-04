@@ -92,6 +92,10 @@ CapyMethod* capy_method_from_class(CapyClass* cc, const std::string& functionNam
 // you aren't able to pull out actual class objects, just global objects
 CapyField* capy_field_from_class(CapyClass* cc, const std::string& fieldName);
 
+// This function is used to get a field from a given "class", as it currently stands
+// you aren't able to pull out actual class objects, just global objects
+std::vector<CapyField*> capy_fields_from_class(CapyClass* cc);
+
 // This function is used to get the data at a given field in a class
 // as long as you know the name of the field
 void capy_field_data_get(CapyObject* instance, CapyClass* cc, const std::string& fieldName, void* value);

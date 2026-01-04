@@ -509,6 +509,7 @@ struct CapyJITStorage
     std::mutex JitMutex;
     std::vector<std::filesystem::path> PendingFiles;
     std::vector<std::filesystem::path> FilesToCompile;
+    std::unordered_map<uint64_t, std::filesystem::path> TrackedObjectFiles;
     std::vector<std::string> CompilationCommands;
 
     std::atomic<bool> JitCompilationNeeded{false};
