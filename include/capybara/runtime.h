@@ -140,7 +140,7 @@ void capy_string_release(CapyString& s);
 
 
 
-struct _SymbolMetaData
+struct CapySymbolMetaData
 {
     CapyString Namespace;
     CapyString ClassName;
@@ -154,6 +154,18 @@ struct _SymbolMetaData
     bool IsClassInstance = false;
     bool IsStruct = false;
     size_t Offset = INVALID_OFFSET;
+};
+
+struct CapyTableMetaData
+{
+    CapyString Namespace;
+    CapyString ClassName;
+    CapyString Name;
+    CapyString ReturnType;
+
+    bool IsVariable = false;
+    bool IsClassInstance = false;
+    bool IsStruct = false;
 };
 
 
@@ -250,18 +262,13 @@ struct CapyField
 
     CapyString FieldTypeString;
 
-    RuntimeValue DefaultData;
-    _SymbolMetaData SymbolMetaData;
-
     CapyField()
       : SymHandle(nullptr),
         FieldType(ValueType::VOID),         // or whatever “invalid” is in your enum
         Offset(0),
         Size(0),
         ClassMember(false),
-        FieldTypeString(capy_string_literal("")),
-        DefaultData{},                      // zero initialize RuntimeValue
-        SymbolMetaData{}                    // uses its own default ctor
+        FieldTypeString(capy_string_literal(""))
     {}
     
     CapyField(const CapyField& other)
@@ -270,9 +277,7 @@ struct CapyField
           Offset(other.Offset),
           Size(other.Size),
           ClassMember(other.ClassMember),
-          FieldTypeString(other.FieldTypeString),
-          DefaultData(other.DefaultData),
-          SymbolMetaData(other.SymbolMetaData)
+          FieldTypeString(other.FieldTypeString)
     {}
 };
 
@@ -284,22 +289,18 @@ struct CapyMethod
     std::vector<ValueType> Parameters;
     bool ClassMember = false;
 
-    _SymbolMetaData SymbolMetaData;
-
     CapyMethod()
         : SymHandle(nullptr),
         ReturnType(ValueType::VOID),
         Parameters(),
-        ClassMember(false),
-        SymbolMetaData{}
+        ClassMember(false)
     {}
 
     CapyMethod(const CapyMethod& other)
         : SymHandle(nullptr),
           ReturnType(other.ReturnType),
           Parameters(other.Parameters),
-          ClassMember(other.ClassMember),
-          SymbolMetaData(other.SymbolMetaData)
+          ClassMember(other.ClassMember)
     {}
 };
 
@@ -323,6 +324,8 @@ struct CapyVTable
     }
 };
 
+struct CapyImage;
+
 struct CapyClass
 {
     CapyString NameSpace;
@@ -337,6 +340,8 @@ struct CapyClass
     uint64_t Hash;
 
     bool Resolved = false;
+
+    CapyImage* BaseImage = nullptr;
 
     std::unordered_map<uint64_t, SubField> SubFields;
     std::unordered_map<uint64_t, BaseClass> BaseClasses;
@@ -369,11 +374,11 @@ enum class CapyTableType
 
 struct CapyTableInfo
 {
-    std::unordered_map<uint64_t, _SymbolMetaData> Symbols;
+    std::unordered_map<uint64_t, std::unordered_map<uint64_t, CapyTableMetaData>> Symbols;
 };
 
 struct CapyImage {
-    std::array<CapyTableInfo, static_cast<uint32_t>(CapyTableType::MaxTableCount)> Tables;
+    std::array<std::unique_ptr<CapyTableInfo>, static_cast<uint32_t>(CapyTableType::MaxTableCount)> Tables;
     std::unordered_map<uint64_t, std::unique_ptr<CapyClass>> Classes;
     std::unordered_map<uint64_t, std::unique_ptr<CapyClass>> Structures;
 

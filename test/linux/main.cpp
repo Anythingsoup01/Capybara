@@ -112,7 +112,7 @@ int main(int argc, char** argv)
     CapyWrapper TestClassWrapper(img, "DLL", "Test");
 
     int data = 10;
-    TestClassWrapper.SetFieldData(".ID", data);
+    TestClassWrapper.SetFieldData("m_Base.ID", data);
 
     CapyMethod* PrintBaseIntMethod = TestClassWrapper.GetMethod("PrintBaseInt");
 
@@ -120,7 +120,7 @@ int main(int argc, char** argv)
         raise(SIGTRAP);
 
 
-    int retrievedData = TestClassWrapper.GetFieldData<int>(".ID");
+    int retrievedData = TestClassWrapper.GetFieldData<int>("m_Base.ID");
 
     std::cout << "Retrieved Data: " << retrievedData << "\n";
 

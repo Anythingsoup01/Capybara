@@ -73,6 +73,8 @@ std::vector<CapyString> capy_get_core_libraries_from_domain();
 // This function is used to get the image of a given library
 CapyImage* capy_library_get_image(CapyLibrary* cl);
 
+CapyTableInfo* capy_table_info_get(CapyImage* ci, CapyTableType type);
+
 // This function is used to get a class from a given image,
 // Provide the namespace and class name to retrieve the wanted class
 CapyClass* capy_class_from_name(CapyImage* ci, const std::string& nameSpace, const std::string& className);

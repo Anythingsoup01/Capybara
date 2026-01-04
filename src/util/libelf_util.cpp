@@ -93,7 +93,7 @@ static inline CapyString join_scope(const std::vector<CapyString>& scope_stack, 
     return capy_string_arena(domain->Arena, tmp.c_str());
 }
 
-void traverse_and_collect(const dwarf::die& d, std::vector<CapyString>& scope_stack, RuntimeStorage& storage, std::vector<_SymbolMetaData>& outSymbols)
+void traverse_and_collect(const dwarf::die& d, std::vector<CapyString>& scope_stack, RuntimeStorage& storage, std::vector<CapySymbolMetaData>& outSymbols)
 {
     auto& cfg = storage.Config;
     auto* domain = storage.Active.Runtime.get();
@@ -164,7 +164,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<CapyString>& scope_st
 
         CapyString qualified_name = join_scope(scope_stack, domain);
 
-        _SymbolMetaData sym;
+        CapySymbolMetaData sym;
         if (strs_n_equal(name.c_str(), {"<anon>"})) return;
 
         sym.Name = name;
@@ -326,7 +326,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<CapyString>& scope_st
         // Intentionally leaving the class name empty
         // If we get an instance of Class* this,
         // then we will convert it to the ClassName.
-        _SymbolMetaData sym = _SymbolMetaData();
+        CapySymbolMetaData sym;
         CapyString name = get_short_name(d, domain);
         if (m_strs_n_equal(name, cfg.IgnoredNames)) return;
 
@@ -413,7 +413,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<CapyString>& scope_st
         // Intentionally leaving the class name empty
         // If we get an instance of Class* this,
         // then we will convert it to the ClassName.
-        _SymbolMetaData sym;
+        CapySymbolMetaData sym;
         CapyString name = get_short_name(d, domain);
         if (strs_n_equal(name.c_str(), {"<anon>"})) return;
 
@@ -493,7 +493,7 @@ void traverse_and_collect(const dwarf::die& d, std::vector<CapyString>& scope_st
         scope_stack.pop_back();
 }
 
-std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vector<_SymbolMetaData>& symbols, CapyActiveDomain& storage)
+std::vector<CapySymbolMetaData> process_library(const elf::elf& ef, const std::vector<CapySymbolMetaData>& symbols, CapyActiveDomain& storage)
 {
     std::unordered_map<std::string, std::string> symbolNames;
     for (auto &sec : ef.sections())
@@ -517,7 +517,7 @@ std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vect
     }
 
 
-    std::vector<_SymbolMetaData> tmp;
+    std::vector<CapySymbolMetaData> tmp;
     
     for (auto& sym : symbols)
     {
@@ -526,7 +526,7 @@ std::vector<_SymbolMetaData> process_library(const elf::elf& ef, const std::vect
         auto it = symbolNames.find(fullName.c_str());
         if (it != symbolNames.end())
         {
-            _SymbolMetaData resolved = sym;
+            CapySymbolMetaData resolved = sym;
             resolved.Signature = capy_string_arena(storage.Runtime->Arena, it->second.c_str());
             tmp.push_back(resolved);
         }
