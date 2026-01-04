@@ -7,18 +7,18 @@
 // compiling files
 //
 // This also applies any ignored names/class names/ namespaces
-CapyDomain* capy_jit_init();
+CapyDomain* capy_init();
 
 // This function is to retrieve the active domain, which stores
 // all the data for loaded classes, methods, and fields
 CapyDomain* capy_get_root_domain();
 
 // This function clears all the storage and shutdown JIT
-void capy_jit_shutdown();
+void capy_shutdown();
 
 // This function checks internally if files need compiled
 // blocking this with a bool can delay compilation
-bool capy_jit_poll();
+bool capy_poll();
 
 // This functions will set a directory that will automatically be searched
 // for any file changes pertaining to .c, .cpp, .h, .hpp files and dynamically
@@ -30,25 +30,17 @@ bool capy_jit_poll();
 // capy_pause_compilation(true / false)
 //
 // There can only be one parent directory set
-void capy_jit_set_source_path(const std::filesystem::path& sourcePath, FileEventCallback callback, bool recursive);
-
-// This function sets the default search path for binaries along with
-// where JIT will compile them to
-void capy_jit_set_binary_path(const std::filesystem::path& binaryPath);
+void capy_set_source_path(const std::filesystem::path& sourcePath, FileEventCallback callback, bool recursive);
 
 // This function sets the include path for you core binary / binaries
 // there can only be one, so core binaries must be stored together
-void capy_jit_set_core_bin_include_path(const std::filesystem::path& includePath);
+void capy_set_core_bin_include_path(const std::filesystem::path& includePath);
 
 // This function lets you specify a namespace you want to ignore,
 // narrowing down any extra namespaces you want to get rid of,
 // calling this twice will only increase the amount of namespaces it's ignoring,
 // you should not call this in an infinite loop.
 void capy_set_ignored_namespace(const std::vector<CapyString>& ignoredNamespace);
-
-// This function will ignore completely empty namespaces, however, if there
-// is a class name it will treat it as a namespace
-void capy_set_ignore_empty_namespace(bool active);
 
 // This function lets you specify any classes you'd like to ignore,
 // I.e. Helper classes, not all that usefull but wanted some continuity

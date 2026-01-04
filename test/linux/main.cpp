@@ -92,13 +92,11 @@ void CustomFileEventCallback(FileEventType type, const std::filesystem::path& pa
 
 int main(int argc, char** argv) 
 {
-    auto* cd = capy_jit_init();
+    auto* cd = capy_init();
 
-    capy_jit_set_source_path("test/dll/Test", CustomFileEventCallback, true);
+    capy_set_source_path("test/dll/Test", CustomFileEventCallback, true);
 
-    capy_jit_set_binary_path("test/dll/Test/.build");
-
-    capy_jit_set_core_bin_include_path("test/dll/Base");
+    capy_set_core_bin_include_path("test/dll/Base");
 
     capy_domain_library_open("build/test/dll/Base/libbase-class.so", true);
 
@@ -129,14 +127,14 @@ int main(int argc, char** argv)
 
     while (true) 
     {
-        if (capy_jit_poll())
+        if (capy_poll())
         {
             std::cout << capy_dump_domain();
         }
     }
 #endif
 
-    capy_jit_shutdown();
+    capy_shutdown();
 
     return 0;
 }

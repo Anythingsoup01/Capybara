@@ -359,9 +359,25 @@ struct CapyClass
     }
 };
 
+enum class CapyTableType
+{
+    TypeDef,
+    MethodDef,
+    FieldDef,
+    MaxTableCount,
+};
+
+struct CapyTableInfo
+{
+    std::unordered_map<uint64_t, _SymbolMetaData> Symbols;
+};
+
 struct CapyImage {
+    std::array<CapyTableInfo, static_cast<uint32_t>(CapyTableType::MaxTableCount)> Tables;
     std::unordered_map<uint64_t, std::unique_ptr<CapyClass>> Classes;
     std::unordered_map<uint64_t, std::unique_ptr<CapyClass>> Structures;
+
+
 
     CapyImage()
         : Classes()
