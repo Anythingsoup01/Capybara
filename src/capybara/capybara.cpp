@@ -84,7 +84,7 @@ static std::string jit_get_compile_command(const std::filesystem::path& filePath
     ss << "gcc -c " << sourceFile << " -o " << compilePath.generic_string() << " \\\n";
     if (!jit.CorePath.empty())
     {
-        ss << "-I" << jit.CorePath.string() << " -gdwarf-4 \\\n";
+        ss << "-I" << jit.CorePath.string() << " -gdwarf-4 -fPIC \\\n";
     }
 
 
