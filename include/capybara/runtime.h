@@ -188,7 +188,7 @@ static constexpr ValueType get_value_type()
     if constexpr (std::is_same_v<T, int64_t>) return ValueType::INT64;
     if constexpr (std::is_same_v<T, uint8_t>) return ValueType::UINT8;
     if constexpr (std::is_same_v<T, uint16_t>) return ValueType::UINT16;
-    if constexpr (std::is_same_v<T, uint64_t>) return ValueType::UINT32;
+    if constexpr (std::is_same_v<T, uint32_t>) return ValueType::UINT32;
     if constexpr (std::is_same_v<T, uint64_t>) return ValueType::UINT64;
     if constexpr (std::is_same_v<T, float>) return ValueType::FLOAT;
     if constexpr (std::is_same_v<T, double>) return ValueType::DOUBLE;
