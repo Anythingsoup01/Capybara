@@ -92,21 +92,19 @@ void CustomFileEventCallback(FileEventType type, const std::filesystem::path& pa
 
 int main(int argc, char** argv) 
 {
-    auto* cd = capy_jit_init();
+    auto* cd = capy_init();
 
-    capy_jit_set_source_path("test/dll/Test", CustomFileEventCallback, true);
+    capy_set_source_path("test/dll/Test", CustomFileEventCallback, true);
 
-    capy_jit_set_binary_path("test/dll/Test/.build");
-
-    capy_jit_set_core_bin_include_path("test/dll/Base");
+    capy_set_core_bin_include_path("test/dll/Base");
 
     capy_domain_library_open("build/test/dll/Base/libbase-class.so", true);
 
     capy_reload_libraries_into_domain();
 
-    CapyLibrary* lib = capy_domain_library_open("test-lib.so", false);
+    CapyLibrary* lib = capy_domain_library_open("CapyBinary.so", false);
 
-#if 1
+#if 0
     CapyImage* img = capy_library_get_image(lib);
 
     ADD_INTERNAL_CALL(Internal_Add);
@@ -114,7 +112,7 @@ int main(int argc, char** argv)
     CapyWrapper TestClassWrapper(img, "DLL", "Test");
 
     int data = 10;
-    TestClassWrapper.SetFieldData(".ID", data);
+    TestClassWrapper.SetFieldData("m_Base.ID", data);
 
     CapyMethod* PrintBaseIntMethod = TestClassWrapper.GetMethod("PrintBaseInt");
 
@@ -122,21 +120,20 @@ int main(int argc, char** argv)
         raise(SIGTRAP);
 
 
-    int retrievedData = TestClassWrapper.GetFieldData<int>(".ID");
+    int retrievedData = TestClassWrapper.GetFieldData<int>("m_Base.ID");
 
     std::cout << "Retrieved Data: " << retrievedData << "\n";
 
-
+#endif
     while (true) 
     {
-        if (capy_jit_poll())
+        if (capy_poll())
         {
             std::cout << capy_dump_domain();
         }
     }
-#endif
 
-    capy_jit_shutdown();
+    capy_shutdown();
 
     return 0;
 }

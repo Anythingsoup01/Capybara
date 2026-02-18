@@ -35,7 +35,7 @@ ValueType string_to_value_type(const std::string& value)
     if (strs_n_equal(value, { "unsigned short", "uint16_t" }))
         return ValueType::UINT16;
 
-    if (strs_n_equal(value, { "unsigned int", "uint64_t" }))
+    if (strs_n_equal(value, { "unsigned int", "uint32_t" }))
         return ValueType::UINT32;
 
     if (strs_n_equal(value, { "unsigned long long", "uint64_t" }))
@@ -69,7 +69,7 @@ size_t type_size(ValueType type)
         case ValueType::INT64: return sizeof(int64_t);
         case ValueType::UINT8: return sizeof(uint8_t);
         case ValueType::UINT16: return sizeof(uint16_t);
-        case ValueType::UINT32: return sizeof(uint64_t);
+        case ValueType::UINT32: return sizeof(uint32_t);
         case ValueType::UINT64: return sizeof(uint64_t);
         case ValueType::FLOAT: return sizeof(float);
         case ValueType::DOUBLE: return sizeof(double);

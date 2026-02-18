@@ -9,7 +9,7 @@ namespace DLL
 {
     void Test::PrintBaseInt()
     {
-        printf("Got: %u\n", Base::ID);
+        printf("Got: %u\n", m_Base.ID);
     }
 
     void Test::CustomAdd(int a, int b)

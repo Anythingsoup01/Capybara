@@ -140,7 +140,7 @@ void capy_string_release(CapyString& s);
 
 
 
-struct _SymbolMetaData
+struct CapySymbolMetaData
 {
     CapyString Namespace;
     CapyString ClassName;
@@ -154,6 +154,18 @@ struct _SymbolMetaData
     bool IsClassInstance = false;
     bool IsStruct = false;
     size_t Offset = INVALID_OFFSET;
+};
+
+struct CapyTableMetaData
+{
+    CapyString Namespace;
+    CapyString ClassName;
+    CapyString Name;
+    CapyString ReturnType;
+
+    bool IsVariable = false;
+    bool IsClassInstance = false;
+    bool IsStruct = false;
 };
 
 
@@ -176,7 +188,7 @@ static constexpr ValueType get_value_type()
     if constexpr (std::is_same_v<T, int64_t>) return ValueType::INT64;
     if constexpr (std::is_same_v<T, uint8_t>) return ValueType::UINT8;
     if constexpr (std::is_same_v<T, uint16_t>) return ValueType::UINT16;
-    if constexpr (std::is_same_v<T, uint64_t>) return ValueType::UINT32;
+    if constexpr (std::is_same_v<T, uint32_t>) return ValueType::UINT32;
     if constexpr (std::is_same_v<T, uint64_t>) return ValueType::UINT64;
     if constexpr (std::is_same_v<T, float>) return ValueType::FLOAT;
     if constexpr (std::is_same_v<T, double>) return ValueType::DOUBLE;
@@ -250,18 +262,13 @@ struct CapyField
 
     CapyString FieldTypeString;
 
-    RuntimeValue DefaultData;
-    _SymbolMetaData SymbolMetaData;
-
     CapyField()
       : SymHandle(nullptr),
         FieldType(ValueType::VOID),         // or whatever “invalid” is in your enum
         Offset(0),
         Size(0),
         ClassMember(false),
-        FieldTypeString(capy_string_literal("")),
-        DefaultData{},                      // zero initialize RuntimeValue
-        SymbolMetaData{}                    // uses its own default ctor
+        FieldTypeString(capy_string_literal(""))
     {}
     
     CapyField(const CapyField& other)
@@ -270,9 +277,7 @@ struct CapyField
           Offset(other.Offset),
           Size(other.Size),
           ClassMember(other.ClassMember),
-          FieldTypeString(other.FieldTypeString),
-          DefaultData(other.DefaultData),
-          SymbolMetaData(other.SymbolMetaData)
+          FieldTypeString(other.FieldTypeString)
     {}
 };
 
@@ -284,22 +289,18 @@ struct CapyMethod
     std::vector<ValueType> Parameters;
     bool ClassMember = false;
 
-    _SymbolMetaData SymbolMetaData;
-
     CapyMethod()
         : SymHandle(nullptr),
         ReturnType(ValueType::VOID),
         Parameters(),
-        ClassMember(false),
-        SymbolMetaData{}
+        ClassMember(false)
     {}
 
     CapyMethod(const CapyMethod& other)
         : SymHandle(nullptr),
           ReturnType(other.ReturnType),
           Parameters(other.Parameters),
-          ClassMember(other.ClassMember),
-          SymbolMetaData(other.SymbolMetaData)
+          ClassMember(other.ClassMember)
     {}
 };
 
@@ -323,6 +324,8 @@ struct CapyVTable
     }
 };
 
+struct CapyImage;
+
 struct CapyClass
 {
     CapyString NameSpace;
@@ -337,6 +340,8 @@ struct CapyClass
     uint64_t Hash;
 
     bool Resolved = false;
+
+    CapyImage* BaseImage = nullptr;
 
     std::unordered_map<uint64_t, SubField> SubFields;
     std::unordered_map<uint64_t, BaseClass> BaseClasses;
@@ -359,9 +364,25 @@ struct CapyClass
     }
 };
 
+enum class CapyTableType
+{
+    TypeDef,
+    MethodDef,
+    FieldDef,
+    MaxTableCount,
+};
+
+struct CapyTableInfo
+{
+    std::unordered_map<uint64_t, std::unordered_map<uint64_t, CapyTableMetaData>> Symbols;
+};
+
 struct CapyImage {
+    std::array<std::unique_ptr<CapyTableInfo>, static_cast<uint32_t>(CapyTableType::MaxTableCount)> Tables;
     std::unordered_map<uint64_t, std::unique_ptr<CapyClass>> Classes;
     std::unordered_map<uint64_t, std::unique_ptr<CapyClass>> Structures;
+
+
 
     CapyImage()
         : Classes()
@@ -488,6 +509,7 @@ struct CapyJITStorage
     std::mutex JitMutex;
     std::vector<std::filesystem::path> PendingFiles;
     std::vector<std::filesystem::path> FilesToCompile;
+    std::unordered_map<uint64_t, std::filesystem::path> TrackedObjectFiles;
     std::vector<std::string> CompilationCommands;
 
     std::atomic<bool> JitCompilationNeeded{false};
