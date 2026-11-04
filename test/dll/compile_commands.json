@@ -1,0 +1,12 @@
+[
+  {
+    "directory": "test/dll/",
+    "file": "/home/anyth/Doge/Dev/Capybara/test/dll/src/base.cpp",
+    "command": "g++ -c /home/anyth/Doge/Dev/Capybara/test/dll/src/base.cpp -o /home/anyth/Doge/Dev/Capybara/CapyBuild/src_base.o -std=c++20 -fPIC -O2 -I/home/anyth/Doge/Dev/Capybara/test/script_core/src"
+  },
+  {
+    "directory": "test/dll/",
+    "file": "/home/anyth/Doge/Dev/Capybara/test/dll/src/test.cpp",
+    "command": "g++ -c /home/anyth/Doge/Dev/Capybara/test/dll/src/test.cpp -o /home/anyth/Doge/Dev/Capybara/CapyBuild/src_test.o -std=c++20 -fPIC -O2 -I/home/anyth/Doge/Dev/Capybara/test/script_core/src"
+  }
+]

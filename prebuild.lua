@@ -1,64 +1,58 @@
 Workspace = {
-    name = "Capybara",
-    flags = {
-        "-fPIC",
-    },
+	name = "Capybara",
+	flags = {
+		"-fPIC",
+	},
 }
 
 Project = {
-    name = "Capybara",
-    kind = "StaticLib",
-    language = "C++",
-    dialect = "20",
+	name = "Capybara",
+	kind = "StaticLib",
+	language = "C++",
+	dialect = "20",
 
-    pch = "pch/cpypch.h",
+	pch = "Capybara/src/Capybara/cpch.h",
 
-    files = {
-        "src/*.cpp",
-        "include/capybara/*.h",
-        "internal/*.h",
-    },
+	files = {
+		"Capybara/src/Capybara/**.cpp",
+	},
 
-    includedirs = {
-        "include",
-        "internal",
-        "pch"
-    },
+	includedirs = {
+    "Capybara/src/Capybara"
+	},
 
-    links = {
-        "dl",
-        "elf",
-        "elf++",
-        "dwarf++",
-        "ffi"
-    },
-    flags = {
-        "-rdynamic",
-    },
-
+	links = {
+		"dl",
+		"elf",
+		"dwarf",
+		"ffi",
+	},
+	flags = {
+		"-rdynamic",
+	},
 }
 
 Project = {
-    name = "test-linux-exe",
-    kind = "ConsoleApp",
-    language = "C++",
-    dialect = "20",
+	name = "test-linux-exe",
+	kind = "ConsoleApp",
+	language = "C++",
+	dialect = "20",
 
-    files = {
-        "./test/linux/main.cpp"
-    },
+	files = {
+		"./test/main.cpp",
+	},
 
-    includedirs = {
-        "test/linux",
-        "include",
-    },
+	includedirs = {
+		"test",
+		"Capybara/src/Capybara",
+	},
 
-    links = {
-        "Capybara"
-    },
-    flags = {
-        "-rdynamic",
-    },
+	links = {
+		"Capybara",
+	},
+	flags = {
+		"-rdynamic",
+	},
 }
 
-External = "test/dll"
+External = "test/script_core"
