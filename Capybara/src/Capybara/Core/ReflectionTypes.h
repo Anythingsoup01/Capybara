@@ -71,17 +71,81 @@ struct CapyObject {
   struct Instance {
     std::vector<uint8_t> RawMemory;
 
+    bool GetField(const std::string &fieldName, const CapyObject *classDef, void *&buffer) {
+      for (const auto &field : classDef->Fields) {
+        if (fieldName == field.Name) {
+          if (RawMemory.size() < field.ByteOffset + field.SizeInBytes) {
+            buffer = nullptr;
+            return false;
+          }
+          void *data = reinterpret_cast<void *>(RawMemory.data() + field.ByteOffset);
+          memcpy(buffer, data, field.SizeInBytes);
+          return true;
+        }
+      }
+
+      for (const auto &baseClassInfo : classDef->BaseClasses) {
+        auto baseClassDef = Capybara::GetClass(baseClassInfo.ClassName);
+        if (baseClassDef) {
+          for (const auto &baseField : baseClassDef->Fields) {
+            if (baseField.Name == fieldName) {
+              uint32_t absoluteOffset = baseClassInfo.ByteOffset + baseField.ByteOffset;
+              if (RawMemory.size() < absoluteOffset + baseField.SizeInBytes) {
+                buffer = nullptr;
+                return false;
+              }
+              void *data = reinterpret_cast<void *>(RawMemory.data() + absoluteOffset);
+              memcpy(buffer, data, baseField.SizeInBytes);
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    bool SetField(const std::string &fieldName, const void *value, const CapyObject *classDef) {
+      for (const auto &field : classDef->Fields) {
+        if (fieldName == field.Name) {
+          if (RawMemory.size() < field.ByteOffset + field.SizeInBytes) {
+            return false;
+          }
+          void *data = reinterpret_cast<void *>(RawMemory.data() + field.ByteOffset);
+          memcpy(data, value, field.SizeInBytes);
+          return true;
+        }
+      }
+
+      for (const auto &baseClassInfo : classDef->BaseClasses) {
+        auto baseClassDef = Capybara::GetClass(baseClassInfo.ClassName);
+        if (baseClassDef) {
+          for (const auto &baseField : baseClassDef->Fields) {
+            if (baseField.Name == fieldName) {
+              uint32_t absoluteOffset = baseClassInfo.ByteOffset + baseField.ByteOffset;
+              if (RawMemory.size() < absoluteOffset + baseField.SizeInBytes) {
+                return false;
+              }
+              void *data = reinterpret_cast<void *>(RawMemory.data() + absoluteOffset);
+              memcpy(data, value, baseField.SizeInBytes);
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
     template <typename T>
-    void GetField(const std::string &fieldName, const CapyObject *classDef, T *buffer) {
+    bool GetField(const std::string &fieldName, const CapyObject *classDef, T *&buffer) {
       for (const auto &field : classDef->Fields) {
         if (fieldName == field.Name) {
           if (RawMemory.size() < field.ByteOffset + sizeof(T)) {
             buffer = nullptr;
-            return;
+            return false;
           }
           T *data = reinterpret_cast<T *>(RawMemory.data() + field.ByteOffset);
           memcpy(buffer, data, sizeof(T));
-          return;
+          return true;
         }
       }
 
@@ -93,15 +157,16 @@ struct CapyObject {
               uint32_t absoluteOffset = baseClassInfo.ByteOffset + baseField.ByteOffset;
               if (RawMemory.size() < absoluteOffset + sizeof(T)) {
                 buffer = nullptr;
-                return;
+                return false;
               }
               T *data = reinterpret_cast<T*>(RawMemory.data() + absoluteOffset);
               memcpy(buffer, data, sizeof(T));
-              return;
+              return true;
             }
           }
         }
       }
+      return false;
     }
 
     template <typename T>
