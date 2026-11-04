@@ -11,7 +11,7 @@ bool JitCompiler::ProcessChanges(const std::vector<FileChangeEvent> &changes) {
   bool sourceTopologyChanged = true;
 
   for (const auto &change : changes) {
-    if (change.Path.extension() == ".h" || change.Path.extension() == ".hpp")
+    if (change.Path.extension() != ".cpp")
       continue;
     std::filesystem::path objPath = GetObjectPath(change.Path);
 
