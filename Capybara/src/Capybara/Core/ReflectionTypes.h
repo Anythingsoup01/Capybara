@@ -2,6 +2,7 @@
 
 #include "Capybara.h"
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -71,12 +72,16 @@ struct CapyObject {
     std::vector<uint8_t> RawMemory;
 
     template <typename T>
-    T *GetField(const std::string &fieldName, const CapyObject *classDef) {
+    void GetField(const std::string &fieldName, const CapyObject *classDef, T *buffer) {
       for (const auto &field : classDef->Fields) {
         if (fieldName == field.Name) {
-          if (RawMemory.size() < field.ByteOffset + sizeof(T))
-            return nullptr;
-          return reinterpret_cast<T *>(RawMemory.data() + field.ByteOffset);
+          if (RawMemory.size() < field.ByteOffset + sizeof(T)) {
+            buffer = nullptr;
+            return;
+          }
+          T *data = reinterpret_cast<T *>(RawMemory.data() + field.ByteOffset);
+          memcpy(buffer, data, sizeof(T));
+          return;
         }
       }
 
@@ -86,27 +91,49 @@ struct CapyObject {
           for (const auto &baseField : baseClassDef->Fields) {
             if (baseField.Name == fieldName) {
               uint32_t absoluteOffset = baseClassInfo.ByteOffset + baseField.ByteOffset;
-              if (RawMemory.size() < absoluteOffset + sizeof(T)) return nullptr;
-              return reinterpret_cast<T*>(RawMemory.data() + absoluteOffset);
+              if (RawMemory.size() < absoluteOffset + sizeof(T)) {
+                buffer = nullptr;
+                return;
+              }
+              T *data = reinterpret_cast<T*>(RawMemory.data() + absoluteOffset);
+              memcpy(buffer, data, sizeof(T));
+              return;
             }
           }
         }
       }
-
-      return nullptr;
     }
 
     template <typename T>
     bool SetField(const std::string &fieldName, const T &value, const CapyObject *classDef) {
-      T *fieldPtr = GetField<T>(fieldName, classDef);
-      if (!fieldPtr) {
-        std::cerr << "Capybara Error: Field '" << fieldName 
-          << "' not found or type mismatch on class '" << classDef->ClassName << "'!\n";
-        return false;
+      for (const auto &field : classDef->Fields) {
+        if (fieldName == field.Name) {
+          if (RawMemory.size() < field.ByteOffset + sizeof(T)) {
+            return false;
+          }
+          T *data = reinterpret_cast<T *>(RawMemory.data() + field.ByteOffset);
+          *data = value;
+          return true;
+        }
       }
 
-      *fieldPtr = value;
-      return true;
+      for (const auto &baseClassInfo : classDef->BaseClasses) {
+        auto baseClassDef = Capybara::GetClass(baseClassInfo.ClassName);
+        if (baseClassDef) {
+          for (const auto &baseField : baseClassDef->Fields) {
+            if (baseField.Name == fieldName) {
+              uint32_t absoluteOffset = baseClassInfo.ByteOffset + baseField.ByteOffset;
+              if (RawMemory.size() < absoluteOffset + sizeof(T)) {
+                return false;
+              }
+              T *data = reinterpret_cast<T*>(RawMemory.data() + absoluteOffset);
+              *data = value;
+              return true;
+            }
+          }
+        }
+      }
+      return false;
     }
 
     // Method Ivoking
