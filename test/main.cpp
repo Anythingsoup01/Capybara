@@ -13,7 +13,7 @@ int main(void) {
 
   Capybara::Capybara::LoadLibrary("CapyBuild/CapyRuntimeLib.so");
 
-  #if 0
+  #if 1
   auto testClass = Capybara::Capybara::GetClass("Test");
   if (testClass) {
     auto instance = testClass->CreateInstance();

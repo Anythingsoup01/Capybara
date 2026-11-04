@@ -26,6 +26,8 @@ public:
 
   static std::shared_ptr<CapyObject> GetClass(const std::string &className);
 
+  static std::unordered_map<std::string, std::shared_ptr<CapyObject>> &GetClasses() { return m_LoadedClasses; }
+
 private:
   static void PostProcessInheritance(
       std::shared_ptr<CapyObject> targetObj, const ClassLayoutInfo &rawLayout,
