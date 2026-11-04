@@ -96,6 +96,19 @@ struct CapyObject {
       return nullptr;
     }
 
+    template <typename T>
+    bool SetField(const std::string &fieldName, const T &value, const CapyObject *classDef) {
+      T *fieldPtr = GetField<T>(fieldName, classDef);
+      if (!fieldPtr) {
+        std::cerr << "Capybara Error: Field '" << fieldName 
+          << "' not found or type mismatch on class '" << classDef->ClassName << "'!\n";
+        return false;
+      }
+
+      *fieldPtr = value;
+      return true;
+    }
+
     // Method Ivoking
     template <typename Ret, typename... Args>
     Ret Invoke(const std::string &methodName, const CapyObject *classDef,
