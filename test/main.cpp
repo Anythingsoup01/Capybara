@@ -1,6 +1,6 @@
-#include <Core/Capybara.h>
-#include <JIT/JIT.h>
-#include "Core/ReflectionTypes.h"
+#include <Capybara/Core/Capybara.h>
+#include <Capybara/JIT/JIT.h>
+#include <Capybara/Core/ReflectionTypes.h>
 
 int main(void) {
 
@@ -17,7 +17,8 @@ int main(void) {
   auto testClass = Capybara::Capybara::GetClass("Test");
   if (testClass) {
     auto instance = testClass->CreateInstance();
-    int *mMyIntPtr = instance->GetField<int>("m_MyInt", testClass.get());
+    int *mMyIntPtr;
+    instance->GetField<int>("m_MyInt", testClass.get(), mMyIntPtr);
     if (mMyIntPtr) {
       *mMyIntPtr = 42;
       std::cout << "Set mMyIntPtr to 42 printing now!\n";

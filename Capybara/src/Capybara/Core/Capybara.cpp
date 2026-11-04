@@ -1,12 +1,11 @@
 #include "Capybara.h"
-#include "Core/LibraryLoader.h"
-#include "Core/ObjectAllocator.h"
+#include "LibraryLoader.h"
+#include "ObjectAllocator.h"
 
 #include "ReflectionTypes.h"
 
 #include <dlfcn.h>
 #include <gelf.h>
-#include <utility>
 
 namespace Capybara {
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Core/ReflectionTypes.h"
+#include "ReflectionTypes.h"
 namespace Capybara {
 
 class ObjectAllocator {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <JIT/FileWatcher.h>
+#include "FileWatcher.h"
 
 namespace Capybara {
 

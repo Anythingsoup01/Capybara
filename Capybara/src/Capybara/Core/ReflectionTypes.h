@@ -136,7 +136,7 @@ struct CapyObject {
     }
 
     template <typename T>
-    bool GetField(const std::string &fieldName, const CapyObject *classDef, T *&buffer) {
+    bool GetField(const std::string &fieldName, const CapyObject *classDef, T *buffer) {
       for (const auto &field : classDef->Fields) {
         if (fieldName == field.Name) {
           if (RawMemory.size() < field.ByteOffset + sizeof(T)) {

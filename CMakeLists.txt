@@ -20,7 +20,7 @@ Capybara/src/Capybara/Core/ObjectAllocator.cpp
 target_precompile_headers(Capybara PUBLIC Capybara/src/Capybara/cpch.h)
 
 target_include_directories(Capybara PRIVATE
-Capybara/src/Capybara
+Capybara/src
 )
 
 target_link_libraries(Capybara
@@ -44,7 +44,7 @@ target_sources(test-linux-exe PRIVATE
 
 target_include_directories(test-linux-exe PRIVATE
 test
-Capybara/src/Capybara
+Capybara/src
 )
 
 target_link_libraries(test-linux-exe

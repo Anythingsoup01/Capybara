@@ -1,7 +1,7 @@
 #pragma once
 
-#include "JIT/FileWatcher.h"
-#include "JIT/JITCompiler.h"
+#include "FileWatcher.h"
+#include "JITCompiler.h"
 
 namespace Capybara {
 

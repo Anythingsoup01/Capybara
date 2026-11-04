@@ -18,7 +18,7 @@ Project = {
 	},
 
 	includedirs = {
-    "Capybara/src/Capybara"
+    "Capybara/src"
 	},
 
 	links = {
@@ -44,7 +44,7 @@ Project = {
 
 	includedirs = {
 		"test",
-		"Capybara/src/Capybara",
+		"Capybara/src",
 	},
 
 	links = {
