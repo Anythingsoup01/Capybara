@@ -1,16 +1,17 @@
 Project = {
-  name = "ScriptCore",
-  kind = "StaticLib",
-  language = "C++",
-  dialect = "20",
+	name = "ScriptCore",
+	kind = "SharedLib",
+	language = "C++",
+	dialect = "20",
 
-  files = {
-    "src/**.cpp",
-  },
-  includedirs = {
-    "src"
-  },
+	files = {
+		"src/**.cpp",
+	},
+	includedirs = {
+		"src",
+	},
 	flags = {
-		"-rdynamic",
+		"-fPIC",
+		"-gdwarf-4",
 	},
 }

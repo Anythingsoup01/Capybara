@@ -21,7 +21,7 @@ static std::vector<std::string> s_NonUserDefines = {
   "std::",    "basic_ostream",         "type_info",   "typedef",   "_IO_",
   "__",       "_GLOBAL_OFFSET_TABLE_", "DW.",         "_fini",     "_init",
   "_DYNAMIC", "frame_dummy",           "completed.0", "deregister_tm_clones",
-  "register_tm_clones",
+  "register_tm_clones", "typeinfo name", "typeinfo for", "vtable"
 };
 
 LibraryLoader::LibraryLoader(const std::filesystem::path &libPath) {

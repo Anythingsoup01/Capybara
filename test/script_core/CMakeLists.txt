@@ -1,8 +1,9 @@
-add_library(ScriptCore STATIC)
+add_library(ScriptCore SHARED)
 
 set_property(TARGET ScriptCore PROPERTY CXX_STANDARD 20)
 target_sources(ScriptCore PRIVATE
 src/Transform.cpp
+src/internal_calls.cpp
 src/Object.cpp
 )
 
@@ -11,7 +12,8 @@ src
 )
 
 target_compile_options(ScriptCore PRIVATE
--rdynamic
+-fPIC
+-gdwarf-4
 )
 
 

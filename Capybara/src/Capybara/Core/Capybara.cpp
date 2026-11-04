@@ -21,6 +21,24 @@ void Capybara::Shutdown() {
 void Capybara::LoadLibrary(const std::filesystem::path &libPath) {
   UnloadLibrary();
 
+  if (!m_ExternalBinaryPath.empty()) {
+    m_ExternalLibraryHandle = dlopen(m_ExternalBinaryPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    if (!m_ExternalLibraryHandle) {
+      throw std::runtime_error(dlerror());
+    }
+
+    for (const auto& [name, hostFnPtr] : m_InternalCallMap) {
+      // dlsym returns a pointer TO the global function pointer variable in the .so
+      void** symbolLoc = reinterpret_cast<void**>(dlsym(m_ExternalLibraryHandle, name.c_str()));
+      if (symbolLoc) {
+        *symbolLoc = hostFnPtr;
+        std::cout << "Successfully bound internal call: " << name << "\n";
+      } else {
+        std::cerr << "Failed to bind: " << name << " -> " << dlerror() << "\n";
+      }
+    }
+  }
+
   m_LibraryHandle = dlopen(libPath.c_str(), RTLD_NOW | RTLD_DEEPBIND);
   if (!m_LibraryHandle) {
     UnloadLibrary();
@@ -93,6 +111,14 @@ void Capybara::PostProcessInheritance(
       }
     }
   }
+}
+
+void Capybara::AddInternalCall(const std::string &fullName, void *funcPointer) {
+  if (m_InternalCallMap.find(fullName) != m_InternalCallMap.end()) {
+    return;
+  }
+
+  m_InternalCallMap.emplace(fullName, funcPointer);
 }
 
 }

@@ -162,8 +162,7 @@ bool JitCompiler::LinkAll() {
   std::string cmd = "g++ -shared -o \"" + output_lib.string() + "\" " + obj_list;
 
   if (!m_ExternalBinaryPath.empty() && !m_ExternalIncludePath.empty())
-    cmd += " \"" + m_ExternalBinaryPath.string() + "\"";
-
+    cmd += " -Wl,-rpath," + std::filesystem::absolute(m_ExternalBinaryPath).string();
 
   int result = std::system(cmd.c_str());
   if (result == 0) {
