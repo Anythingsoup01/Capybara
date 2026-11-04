@@ -20,7 +20,7 @@ int main(void) {
 
   ADD_INTERNAL_CALL(external_adder);
 
-  //Capybara::Capybara::LoadLibrary("CapyBuild/CapyRuntimeLib.so");
+  Capybara::Capybara::LoadLibrary("CapyBuild/CapyRuntimeLib.so");
 
   #if 1
   auto testClass = Capybara::Capybara::GetClass("Test");

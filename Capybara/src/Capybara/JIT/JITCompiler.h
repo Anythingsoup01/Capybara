@@ -21,6 +21,8 @@ public:
     m_SourcePath = sourcePath;
   }
 
+  bool ForceCompilation();
+
   bool ProcessChanges(const std::vector<FileChangeEvent> &changes);
 
 private:

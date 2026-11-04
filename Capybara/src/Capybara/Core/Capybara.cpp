@@ -40,9 +40,15 @@ void Capybara::LoadLibrary(const std::filesystem::path &libPath) {
   }
 
   m_LibraryHandle = dlopen(libPath.c_str(), RTLD_NOW | RTLD_DEEPBIND);
-  if (!m_LibraryHandle) {
+  if (!m_LibraryHandle && !Jit::ForceCompilation()) {
     UnloadLibrary();
     throw std::runtime_error(dlerror());
+  } else {
+    m_LibraryHandle = dlopen(libPath.c_str(), RTLD_NOW | RTLD_DEEPBIND);
+    if (!m_LibraryHandle) {
+      UnloadLibrary();
+      throw std::runtime_error(dlerror());
+    }
   }
 
   LibraryLoader loader(libPath);

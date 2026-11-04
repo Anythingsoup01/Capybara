@@ -27,6 +27,10 @@ public:
     m_Compiler.SetBuildDirectory(buildDir);
   }
 
+  static bool ForceCompilation() {
+    return m_Compiler.ForceCompilation();
+  }
+
   static bool Poll();
 private:
   static inline FileWatcher m_FileWatcher;

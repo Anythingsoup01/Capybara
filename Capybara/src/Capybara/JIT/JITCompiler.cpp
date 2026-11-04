@@ -4,6 +4,56 @@
 
 namespace Capybara {
 
+bool JitCompiler::ForceCompilation() {
+  std::vector<std::string> sourceFiles;
+
+  if (!std::filesystem::exists(m_SourcePath)) {
+    std::cerr << "JIT Error: Source directory does not exist: " << m_SourcePath << "\n";
+    return false;
+  }
+
+  if (!std::filesystem::exists(m_BuildDir)) {
+    std::filesystem::create_directory(m_BuildDir);
+  }
+
+  // 1. Recursively scan all subdirectories for .cpp files
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(m_SourcePath)) {
+    if (entry.is_regular_file() && entry.path().extension() == ".cpp") {
+      sourceFiles.push_back(entry.path().string());
+    }
+  }
+
+  if (sourceFiles.empty()) {
+    std::cerr << "JIT Warning: No source files found in " << m_SourcePath << "\n";
+    return false;
+  }
+
+  // 2. Construct the g++ / clang++ compilation command
+  std::string cmd = "g++ -shared -fPIC -std=c++20";
+
+  for (const auto& src : sourceFiles) {
+    cmd += " " + src;
+  }
+
+  cmd += " -o " + (m_BuildDir / "CapyRuntimeLib.so").string();
+  cmd += " -I" + m_ExternalIncludePath.string();
+  cmd += " -L" + m_ExternalBinaryPath.parent_path().string();
+  cmd += " -lScriptCore";
+  // Embed rpath so dlopen can find libScriptCore.so at runtime
+  cmd += " -Wl,-rpath," + std::filesystem::absolute(m_ExternalBinaryPath).string();
+  cmd += " -O2 -Wall";
+
+
+  // 3. Execute compilation
+  int result = std::system(cmd.c_str());
+  if (result != 0) {
+    std::cerr << "JIT Compilation Failed with exit code: " << result << "\n";
+    return false;
+  }
+
+  return true;
+}
+
 bool JitCompiler::ProcessChanges(const std::vector<FileChangeEvent> &changes) {
   if (changes.empty()) return false;
 
