@@ -360,6 +360,47 @@ ClassLayoutInfo LibraryLoader::ParseClassDie(Dwarf_Die class_die) const {
   return info;
 }
 
+uint32_t ResolveTypeSize(Dwarf_Debug dbg, Dwarf_Die type_die, Dwarf_Bool is_info) {
+  if (!type_die) return 0;
+
+  // 1. Try getting the byte size directly from the current DIE
+  Dwarf_Unsigned byte_size = 0;
+  Dwarf_Error error = nullptr;
+  if (dwarf_bytesize(type_die, &byte_size, &error) == DW_DLV_OK) {
+    return static_cast<uint32_t>(byte_size);
+  }
+  if (error) { dwarf_dealloc(dbg, error, DW_DLA_ERROR); }
+
+  // 2. If it's a modifier/typedef/pointer without a direct size, follow DW_AT_type
+  Dwarf_Half tag = 0;
+  if (dwarf_tag(type_die, &tag, &error) == DW_DLV_OK) {
+    if (tag == DW_TAG_typedef || tag == DW_TAG_const_type || 
+      tag == DW_TAG_volatile_type || tag == DW_TAG_restrict_type || 
+      tag == DW_TAG_pointer_type) {
+
+      Dwarf_Off type_offset = 0;
+      Dwarf_Bool is_info = 0;
+      if (dwarf_dietype_offset(type_die, &type_offset, &is_info, &error) == DW_DLV_OK) {
+        Dwarf_Die underlying_die = nullptr;
+        // Use dwarf_offdie_b or dwarf_offdie depending on your libdwarf version
+        if (dwarf_offdie_b(dbg, type_offset, is_info, &underlying_die, &error) == DW_DLV_OK) {
+          uint32_t size = ResolveTypeSize(dbg, underlying_die, is_info);
+          dwarf_dealloc(dbg, underlying_die, DW_DLA_DIE);
+          return size;
+        }
+      }
+    }
+  }
+    if (error) { dwarf_dealloc(dbg, error, DW_DLA_ERROR); }
+
+  // Fallback for pointers if target architecture size is known (e.g., 8 bytes on x86_64)
+  if (tag == DW_TAG_pointer_type) {
+    return 8; 
+  }
+
+  return 0;
+}
+
 MemberInfo LibraryLoader::ParseMemberDie(Dwarf_Die member_die) const {
   MemberInfo member{};
   Dwarf_Error error = nullptr;
@@ -401,11 +442,9 @@ MemberInfo LibraryLoader::ParseMemberDie(Dwarf_Die member_die) const {
         error = nullptr;
       }
 
-      // Extract the Type Size in Bytes (e.g., 4 for int)
-      Dwarf_Unsigned byte_size = 0;
-      if (dwarf_bytesize(type_die, &byte_size, &error) == DW_DLV_OK) {
-        member.SizeInBytes = static_cast<uint32_t>(byte_size);
-      }
+
+      member.SizeInBytes = ResolveTypeSize(m_Dbg, type_die, is_info);
+
       if (error) {
         dwarf_dealloc_error(m_Dbg, error);
         error = nullptr;

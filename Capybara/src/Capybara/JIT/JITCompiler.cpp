@@ -28,28 +28,12 @@ bool JitCompiler::ForceCompilation() {
     return false;
   }
 
-  // 2. Construct the g++ / clang++ compilation command
-  std::string cmd = "g++ -shared -fPIC -std=c++20";
-
   for (const auto& src : sourceFiles) {
-    cmd += " " + src;
+    CompileSingleFile(src, GetObjectPath(src));
   }
 
-  cmd += " -o " + (m_BuildDir / "CapyRuntimeLib.so").string();
-  cmd += " -I" + m_ExternalIncludePath.string();
-  cmd += " -L" + m_ExternalBinaryPath.parent_path().string();
-  cmd += " -lScriptCore";
-  // Embed rpath so dlopen can find libScriptCore.so at runtime
-  cmd += " -Wl,-rpath," + std::filesystem::absolute(m_ExternalBinaryPath).string();
-  cmd += " -O2 -Wall";
-
-
-  // 3. Execute compilation
-  int result = std::system(cmd.c_str());
-  if (result != 0) {
-    std::cerr << "JIT Compilation Failed with exit code: " << result << "\n";
+  if (!LinkAll())
     return false;
-  }
 
   return true;
 }

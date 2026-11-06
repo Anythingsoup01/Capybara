@@ -52,6 +52,7 @@ struct FieldInfo {
   std::string TypeName;
   uint64_t ByteOffset;
   uint64_t SizeInBytes;
+  std::vector<uint8_t> DefaultValue;
 };
 
 struct MethodInfo {
@@ -65,140 +66,112 @@ struct CapyObject {
   std::vector<BaseClassInfo> BaseClasses;
   std::vector<FieldInfo> Fields;
   std::vector<MethodInfo> Methods;
+
+  // NOT TO BE USED EXTERNALLY!
   void *ConstructorPointer = nullptr;
+
+  // NOT TO BE USED EXTERNALLY!
   void *DestructorPointer = nullptr;
 
   struct Instance {
     std::vector<uint8_t> RawMemory;
 
-    bool GetField(const std::string &fieldName, const CapyObject *classDef, void *&buffer) {
+    struct FieldLocation {
+      uint64_t ByteOffset;
+      uint64_t Size;
+      bool Found;
+    };
+
+    FieldLocation FindFieldRecursive(const std::string &fieldName, const CapyObject *classDef, uint32_t baseOffset = 0) const {
+      if (!classDef) return { 0, 0, false };
+
+      // 1. Check fields in the current class
       for (const auto &field : classDef->Fields) {
-        if (fieldName == field.Name) {
-          if (RawMemory.size() < field.ByteOffset + field.SizeInBytes) {
-            buffer = nullptr;
-            return false;
-          }
-          void *data = reinterpret_cast<void *>(RawMemory.data() + field.ByteOffset);
-          memcpy(buffer, data, field.SizeInBytes);
-          return true;
+        if (field.Name == fieldName) {
+          return { baseOffset + field.ByteOffset, field.SizeInBytes, true };
         }
       }
 
+      // 2. Recursively check base classes
       for (const auto &baseClassInfo : classDef->BaseClasses) {
         auto baseClassDef = Capybara::GetClass(baseClassInfo.ClassName);
         if (baseClassDef) {
-          for (const auto &baseField : baseClassDef->Fields) {
-            if (baseField.Name == fieldName) {
-              uint32_t absoluteOffset = baseClassInfo.ByteOffset + baseField.ByteOffset;
-              if (RawMemory.size() < absoluteOffset + baseField.SizeInBytes) {
-                buffer = nullptr;
-                return false;
-              }
-              void *data = reinterpret_cast<void *>(RawMemory.data() + absoluteOffset);
-              memcpy(buffer, data, baseField.SizeInBytes);
-              return true;
-            }
+          auto result = FindFieldRecursive(fieldName, baseClassDef.get(), baseOffset + baseClassInfo.ByteOffset);
+          if (result.Found) {
+            return result;
           }
         }
       }
-      return false;
+
+      return { 0, 0, false };
     }
 
-    bool SetField(const std::string &fieldName, const void *value, const CapyObject *classDef) {
-      for (const auto &field : classDef->Fields) {
-        if (fieldName == field.Name) {
-          if (RawMemory.size() < field.ByteOffset + field.SizeInBytes) {
-            return false;
-          }
-          void *data = reinterpret_cast<void *>(RawMemory.data() + field.ByteOffset);
-          memcpy(data, value, field.SizeInBytes);
-          return true;
-        }
+    // Returns a raw void* pointer directly to the field's memory within RawMemory
+    void* GetFieldPtr(const std::string &fieldName, const CapyObject *classDef) {
+      auto loc = FindFieldRecursive(fieldName, classDef);
+      if (!loc.Found) return nullptr;
+
+      if (RawMemory.size() < loc.ByteOffset + loc.Size) {
+        return nullptr;
       }
 
-      for (const auto &baseClassInfo : classDef->BaseClasses) {
-        auto baseClassDef = Capybara::GetClass(baseClassInfo.ClassName);
-        if (baseClassDef) {
-          for (const auto &baseField : baseClassDef->Fields) {
-            if (baseField.Name == fieldName) {
-              uint32_t absoluteOffset = baseClassInfo.ByteOffset + baseField.ByteOffset;
-              if (RawMemory.size() < absoluteOffset + baseField.SizeInBytes) {
-                return false;
-              }
-              void *data = reinterpret_cast<void *>(RawMemory.data() + absoluteOffset);
-              memcpy(data, value, baseField.SizeInBytes);
-              return true;
-            }
-          }
-        }
-      }
-      return false;
+      return static_cast<void *>(RawMemory.data() + loc.ByteOffset);
     }
 
     template <typename T>
     bool GetField(const std::string &fieldName, const CapyObject *classDef, T *buffer) {
-      for (const auto &field : classDef->Fields) {
-        if (fieldName == field.Name) {
-          if (RawMemory.size() < field.ByteOffset + sizeof(T)) {
-            buffer = nullptr;
-            return false;
-          }
-          T *data = reinterpret_cast<T *>(RawMemory.data() + field.ByteOffset);
-          memcpy(buffer, data, sizeof(T));
-          return true;
-        }
+      auto loc = FindFieldRecursive(fieldName, classDef);
+      if (!loc.Found) {
+        if (buffer) buffer = nullptr;
+        return false;
       }
 
-      for (const auto &baseClassInfo : classDef->BaseClasses) {
-        auto baseClassDef = Capybara::GetClass(baseClassInfo.ClassName);
-        if (baseClassDef) {
-          for (const auto &baseField : baseClassDef->Fields) {
-            if (baseField.Name == fieldName) {
-              uint32_t absoluteOffset = baseClassInfo.ByteOffset + baseField.ByteOffset;
-              if (RawMemory.size() < absoluteOffset + sizeof(T)) {
-                buffer = nullptr;
-                return false;
-              }
-              T *data = reinterpret_cast<T*>(RawMemory.data() + absoluteOffset);
-              memcpy(buffer, data, sizeof(T));
-              return true;
-            }
-          }
-        }
+      if (RawMemory.size() < loc.ByteOffset + loc.Size || sizeof(T) < loc.Size) {
+        if (buffer) buffer = nullptr;
+        return false;
       }
-      return false;
+
+      std::memcpy(buffer, RawMemory.data() + loc.ByteOffset, loc.Size);
+      return true;
     }
 
     template <typename T>
     bool SetField(const std::string &fieldName, const T &value, const CapyObject *classDef) {
-      for (const auto &field : classDef->Fields) {
-        if (fieldName == field.Name) {
-          if (RawMemory.size() < field.ByteOffset + sizeof(T)) {
-            return false;
-          }
-          T *data = reinterpret_cast<T *>(RawMemory.data() + field.ByteOffset);
-          *data = value;
-          return true;
-        }
+      auto loc = FindFieldRecursive(fieldName, classDef);
+      if (!loc.Found) return false;
+
+      if (RawMemory.size() < loc.ByteOffset + loc.Size || sizeof(T) < loc.Size) {
+        return false;
       }
 
-      for (const auto &baseClassInfo : classDef->BaseClasses) {
-        auto baseClassDef = Capybara::GetClass(baseClassInfo.ClassName);
-        if (baseClassDef) {
-          for (const auto &baseField : baseClassDef->Fields) {
-            if (baseField.Name == fieldName) {
-              uint32_t absoluteOffset = baseClassInfo.ByteOffset + baseField.ByteOffset;
-              if (RawMemory.size() < absoluteOffset + sizeof(T)) {
-                return false;
-              }
-              T *data = reinterpret_cast<T*>(RawMemory.data() + absoluteOffset);
-              *data = value;
-              return true;
-            }
-          }
-        }
+      std::memcpy(RawMemory.data() + loc.ByteOffset, &value, loc.Size);
+      return true;
+    }
+
+    // Generic void* GetField utilizing field.Size
+    bool GetFieldVoid(const std::string &fieldName, const CapyObject *classDef, void *buffer, size_t bufferSize) {
+      auto loc = FindFieldRecursive(fieldName, classDef);
+      if (!loc.Found) return false;
+
+      if (RawMemory.size() < loc.ByteOffset + loc.Size || bufferSize < loc.Size) {
+        return false;
       }
-      return false;
+
+      std::memcpy(buffer, RawMemory.data() + loc.ByteOffset, loc.Size);
+      return true;
+    }
+
+    // Generic void* SetField utilizing field.Size
+    bool SetFieldVoid(const std::string &fieldName, const CapyObject *classDef, const void *valueBuffer, size_t valueSize) {
+      auto loc = FindFieldRecursive(fieldName, classDef);
+      if (!loc.Found) return false;
+
+      if (RawMemory.size() < loc.ByteOffset + loc.Size || valueSize < loc.Size) {
+        return false;
+      }
+
+      std::memcpy(RawMemory.data() + loc.ByteOffset, valueBuffer, loc.Size);
+      return true;
     }
 
     // Method Ivoking

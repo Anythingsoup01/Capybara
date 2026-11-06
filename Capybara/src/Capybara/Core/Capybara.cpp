@@ -5,6 +5,7 @@
 #include "ReflectionTypes.h"
 
 #include <dlfcn.h>
+#include <filesystem>
 #include <gelf.h>
 
 namespace Capybara {
@@ -21,10 +22,16 @@ void Capybara::Shutdown() {
 void Capybara::LoadLibrary(const std::filesystem::path &libPath) {
   UnloadLibrary();
 
+  auto timestamp = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+  std::filesystem::path tempLibPath = m_ExternalBinaryPath.parent_path() / ("temp_" + std::to_string(timestamp) + "_" + m_ExternalBinaryPath.filename().string());
+
+  std::filesystem::copy_file(m_ExternalBinaryPath, tempLibPath, std::filesystem::copy_options::overwrite_existing);
+
   if (!m_ExternalBinaryPath.empty()) {
-    m_ExternalLibraryHandle = dlopen(m_ExternalBinaryPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    m_ExternalLibraryHandle = dlopen(tempLibPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (!m_ExternalLibraryHandle) {
-      throw std::runtime_error(dlerror());
+      const char* err = dlerror();
+      throw std::runtime_error(err ? err : "Unknown dlopen error");
     }
 
     for (const auto& [name, hostFnPtr] : m_InternalCallMap) {
@@ -39,17 +46,27 @@ void Capybara::LoadLibrary(const std::filesystem::path &libPath) {
     }
   }
 
-  m_LibraryHandle = dlopen(libPath.c_str(), RTLD_NOW | RTLD_DEEPBIND);
-  if (!m_LibraryHandle && !Jit::ForceCompilation()) {
-    UnloadLibrary();
-    throw std::runtime_error(dlerror());
-  } else {
-    m_LibraryHandle = dlopen(libPath.c_str(), RTLD_NOW | RTLD_DEEPBIND);
-    if (!m_LibraryHandle) {
-      UnloadLibrary();
-      throw std::runtime_error(dlerror());
-    }
+  m_TempExternalLibPath = tempLibPath;
+
+  if (!std::filesystem::exists(libPath)) {
+    if (!Jit::ForceCompilation())
+      throw std::runtime_error("JIT Failed initial compilation!");
   }
+
+  tempLibPath = libPath.parent_path() / ("temp_" + std::to_string(timestamp) + "_" + libPath.filename().string());
+
+  std::filesystem::copy_file(libPath, tempLibPath, std::filesystem::copy_options::overwrite_existing);
+
+  // Load the unique temporary copy instead
+  m_LibraryHandle = dlopen(tempLibPath.c_str(), RTLD_NOW);
+  if (!m_LibraryHandle) {
+    UnloadLibrary();
+    const char* err = dlerror();
+    throw std::runtime_error(err ? err : "Unknown dynamic linking error (dlopen returned null)");
+  }
+
+  // Store temp path so you can clean it up later during UnloadLibrary()
+  m_TempLibraryPath = tempLibPath;
 
   LibraryLoader loader(libPath);
 
@@ -76,6 +93,20 @@ void Capybara::UnloadLibrary() {
     m_LoadedClasses.clear();
     dlclose(m_LibraryHandle);
     m_LibraryHandle = nullptr;
+
+    if (!m_TempLibraryPath.empty() && std::filesystem::exists(m_TempLibraryPath)) {
+      std::filesystem::remove(m_TempLibraryPath);
+      m_TempLibraryPath.clear();
+    }
+  }
+
+  if (m_ExternalLibraryHandle) {
+    dlclose(m_ExternalLibraryHandle);
+    m_ExternalLibraryHandle = nullptr;
+    if (!m_TempExternalLibPath.empty() && std::filesystem::exists(m_TempExternalLibPath)) {
+      std::filesystem::remove(m_TempExternalLibPath);
+      m_TempExternalLibPath.clear();
+    }
   }
 }
 

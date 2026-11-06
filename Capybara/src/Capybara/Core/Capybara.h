@@ -43,6 +43,8 @@ private:
 
 private:
   static inline std::filesystem::path m_ExternalBinaryPath;
+  static inline std::filesystem::path m_TempExternalLibPath;
+  static inline std::filesystem::path m_TempLibraryPath;
   static inline void *m_ExternalLibraryHandle;
   static inline std::unordered_map<std::string, std::shared_ptr<CapyObject>> m_LoadedClasses;
   static inline void *m_LibraryHandle;
